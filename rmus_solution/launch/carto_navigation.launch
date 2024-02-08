@@ -3,7 +3,7 @@
     <arg name="rviz" default="true" />
 
     <!-- Cartographer localization -->
-    <include file="$(find carto_navigation)/launch/cartographer_localization.launch" />
+    <include file="$(find carto_slam)/launch/cartographer_localization.launch" />
 
     <!-- navigation -->
     <include file="$(find navigation)/launch/navigation.launch">
