@@ -2,8 +2,11 @@
 
     <arg name="rviz" default="true" />
 
-    <!-- cartographer navigation -->
-    <include file="$(find carto_navigation)/launch/navigation.launch">
+    <!-- Cartographer localization -->
+    <include file="$(find carto_navigation)/launch/cartographer_localization.launch" />
+
+    <!-- navigation -->
+    <include file="$(find navigation)/launch/navigation.launch">
         <arg name="open_rviz" value="$(arg rviz)" />
     </include>
 
