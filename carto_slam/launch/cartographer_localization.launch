@@ -1,5 +1,9 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- robot_description -->
+  <include file="$(find ep_description)/launch/ep_description.launch" />
+
+  <include file="$(find ira_laser_tools)/launch/merge_rgbd_lidar_scan.launch" />
 
   <arg name="configuration_basename" default="cartographer_2d_localization.lua" />
   <arg name="map_name" default="map" />

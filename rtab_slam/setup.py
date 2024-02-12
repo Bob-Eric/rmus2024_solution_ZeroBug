@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     version="0.0.0",
-    scripts=["scripts/odom_publisher.py"],
+    scripts=["scripts/ekf_transfer.py"],
     packages=["rtab_slam"],
     package_dir={"": "scripts"},
 )

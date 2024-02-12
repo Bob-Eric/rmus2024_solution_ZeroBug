@@ -1,9 +1,15 @@
 <launch>
 
     <arg name="rviz" default="true" />
+    <arg name="slam_method" default="rtab" doc="method type [rtab, carto]" />
 
     <!-- Cartographer localization -->
-    <include file="$(find carto_slam)/launch/cartographer_localization.launch" />
+    <include if="$(eval 'carto' in arg('slam_method'))"
+        file="$(find carto_slam)/launch/cartographer_localization.launch" />
+
+    <!-- Rtab localization -->
+    <include if="$(eval 'rtab' in arg('slam_method'))"
+        file="$(find rtab_slam)/launch/rtab_localization.launch" />
 
     <!-- navigation -->
     <include file="$(find navigation)/launch/navigation.launch">
