@@ -8,7 +8,7 @@
 
   <!-- rviz -->
   <node if="$(arg open_rviz)" pkg="rviz" type="rviz" name="rviz" required="true"
-    args="-d $(find carto_navigation)/rviz/mapping.rviz" />
+    args="-d $(find carto_slam)/rviz/mapping.rviz" />
 
   <!-- robot_description -->
   <include file="$(find ep_description)/launch/ep_description.launch" />
@@ -20,6 +20,6 @@
   <include if="$(arg use_joy_stick)" file="$(find ep_teleop)/launch/joy_stick.launch" />
 
   <!-- Cartographer -->
-  <include file="$(find carto_navigation)/launch/cartographer.launch" />
+  <include file="$(find carto_slam)/launch/cartographer.launch" />
 
 </launch>

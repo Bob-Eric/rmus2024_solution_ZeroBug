@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>carto_navigation</name>
+  <name>carto_slam</name>
   <version>0.0.0</version>
-  <description>The carto_navigation package</description>
+  <description>The carto_slam package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="xxx@todo.todo">xxx</maintainer>
+  <maintainer email="root@todo.todo">root</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->
@@ -19,7 +19,7 @@
   <!-- Url tags are optional, but multiple are allowed, one per tag -->
   <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <!-- Example: -->
-  <!-- <url type="website">http://wiki.ros.org/agv_robot</url> -->
+  <!-- <url type="website">http://wiki.ros.org/carto_slam</url> -->
 
 
   <!-- Author tags are optional, multiple are allowed, one per tag -->
@@ -49,11 +49,16 @@
   <!-- Use doc_depend for packages you need only for building documentation: -->
   <!--   <doc_depend>doxygen</doc_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
-  <depend>cartographer</depend>
-  <depend>cartographer_ros</depend>
-  <depend>cartographer_ros_msgs</depend>
-  <depend>move_base</depend>
-  <depend>teb_local_planner</depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>std_msgs</build_export_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>cartographer</exec_depend>
+  <exec_depend>cartographer_ros</exec_depend>
+  <exec_depend>cartographer_ros_msgs</exec_depend>
+
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
