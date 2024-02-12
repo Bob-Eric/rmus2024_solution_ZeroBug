@@ -1,12 +1,17 @@
 <?xml version="1.0"?>
 <launch>
+  <!-- robot_description -->
+  <include file="$(find ep_description)/launch/ep_description.launch" />
+
+  <include file="$(find ira_laser_tools)/launch/merge_rgbd_lidar_scan.launch" />
 
   <arg name="configuration_basename" default="cartographer_2d_localization.lua" />
   <arg name="map_name" default="map" />
-  <arg name="pbstream_file" value="$(find carto_navigation)/maps/$(arg map_name).pbstream" />
-  <arg name="configuration_directory" default="$(find carto_navigation)/param" />
+  <arg name="pbstream_file" value="$(find carto_slam)/maps/$(arg map_name).pbstream" />
+  <arg name="configuration_directory" default="$(find carto_slam)/param" />
   <node name="cartographer_node" pkg="cartographer_ros"
-    type="cartographer_node" args="
+    type="cartographer_node"
+    args="
           -configuration_directory
               $(arg configuration_directory)
           -configuration_basename $(arg configuration_basename)

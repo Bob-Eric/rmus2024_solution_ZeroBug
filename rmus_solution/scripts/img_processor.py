@@ -440,6 +440,6 @@ class Processor:
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
     load_template()
-    rter = Processor(initial_mode=5, verbose=False)
+    rter = Processor(initial_mode=5, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
