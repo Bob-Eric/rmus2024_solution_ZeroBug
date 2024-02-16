@@ -1,4 +1,5 @@
-footprint: [[-0.16, -0.12], [-0.16, 0.12], [0.16, 0.12], [0.16, -0.12]] # 2D shape of the robot (little bit smaller than the real robot)
+# footprint: [[-0.16, -0.12], [-0.16, 0.12], [0.16, 0.12], [0.16, -0.12]] # 2D shape of the robot (little bit smaller than the real robot)
+footprint: [[-0.12, -0.08], [-0.12, 0.08], [0.12, 0.08], [0.12, -0.08]] # 2D shape of the robot (little bit smaller than the real robot)
 
 plugins:
   - { name: static_layer, type: "costmap_2d::StaticLayer" }
@@ -13,11 +14,19 @@ obstacle_layer:
   obstacle_range: 5
   raytrace_range: 5
   min_obstacle_height: -0.5
-  observation_sources: merged_rgbd_lidar_scan
+  observation_sources: merged_rgbd_lidar_scan lidar_scan
   merged_rgbd_lidar_scan:
     {
       data_type: LaserScan,
       topic: /scan_multi,
+      marking: true,
+      clearing: true,
+      inf_is_valid: true,
+    }
+  lidar_scan:
+    {
+      data_type: LaserScan,
+      topic: /rplidar/scan,
       marking: true,
       clearing: true,
       inf_is_valid: true,
