@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Arguments -->
+  <arg name="open_rviz" default="true" />
+  <arg name="open_reconfigure" default="false" />
+  <arg name="map_file" default="$(find navigation)/maps/map.yaml" />
+
+  <!-- rviz -->
+  <node if="$(arg open_rviz)" pkg="rviz" type="rviz" name="rviz" required="true"
+    args="-d $(find navigation)/rviz/navigation.rviz" />
+
+
+
+  <!-- bringup -->
+  <include file="$(find ep_bringup)/launch/bringup.launch" />
+
+  <!-- rqt_reconfigure -->
+  <node if="$(arg open_reconfigure)" name="rqt_reconfigure" pkg="rqt_reconfigure"
+    type="rqt_reconfigure" />
+
+  <!-- Map server -->
+  <node pkg="map_server" name="map_server" type="map_server" args="$(arg map_file)" />
+
+
+  <!-- move_base -->
+  <include file="$(find navigation)/launch/move_base.launch" />
+
+</launch>
