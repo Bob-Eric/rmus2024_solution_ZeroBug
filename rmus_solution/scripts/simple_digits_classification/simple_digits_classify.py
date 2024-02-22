@@ -14,7 +14,7 @@ class CNN_digits(nn.Module):
         self.W_in = W_in
         self.n_classes = n_classes
         self.norm = nn.BatchNorm2d(1)
-        self.conv1 = nn.Conv2d(1, 8, kernel_size=5)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3)
         self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
         self.conv3 = nn.Conv2d(16, 32, kernel_size=5)
@@ -64,8 +64,9 @@ def train(model:CNN_digits, device, train_loader, optimizer, epoch):
         loss = torch.mean(F.cross_entropy(output, target))
         loss.backward()
         optimizer.step()
-        if epoch % 20 == 0:
-            print(f'Train Epoch: {epoch}\tLoss: {loss.item():.6f}')
+
+    if epoch % 20 == 0:
+        print(f'Train Epoch: {epoch}\tLoss: {loss.item():.6f}')
 
 def rotate_images():
     from PIL import Image
@@ -75,7 +76,11 @@ def rotate_images():
     # 递归遍历文件夹中的所有文件
     for dirpath, dirnames, filenames in os.walk(folder_path):
         for filename in filenames:
-            if filename.endswith('.png') or filename.endswith('.jpg'):  # 检查文件是否为图像
+            if not(filename.endswith('.png') or filename.endswith('.jpg')):  # 检查文件是否为图像
+                continue
+            if filename.find("rotated") != -1:  # 检查文件是否已经旋转过
+                continue
+            else:
                 # 读取图像
                 img = Image.open(os.path.join(dirpath, filename))
             
@@ -95,7 +100,7 @@ def main():
         transforms.ToTensor()
     ])
     train_data = datasets.ImageFolder(root='templates', transform=transform)
-    train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=128, shuffle=True)
 
     # 初始化模型和优化器
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,9 +109,10 @@ def main():
 
     # 开始训练
     if not os.path.exists("model.pth"):
-        for epoch in range(1, 1000 + 1):
+        for epoch in range(1, 600 + 1):
             train(model, device, train_loader, optimizer, epoch)
-        torch.save(model.state_dict(), "model.pth")
+            if epoch % 200 == 0:
+                torch.save(model.state_dict(), "model.pth")
     
     # 加载模型
     model.load_state_dict(torch.load("model.pth"))
@@ -121,4 +127,5 @@ def main():
         print(f"acc: {torch.sum(pred.flatten() == target.flatten()).item() / len(pred.flatten())}")
 
 if __name__ == '__main__':
+    rotate_images()
     main()
