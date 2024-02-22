@@ -82,15 +82,17 @@ def sort_contour(cnt):
     return new_cnt
 
 
+""" Be careful while modifying HSV filter range, you may 
+    need to save warped images to the training set again """
 def preprocessing_exchange(frame):
     hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     boolImg = (
         np.logical_and(
             np.logical_and(
                 np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 150),
-                hsvImg[:, :, 1] >= 120,
+                hsvImg[:, :, 1] >= 130,
             ),
-            hsvImg[:, :, 2] >= 75,
+            hsvImg[:, :, 2] >= 70,
         )
         * 255
     ).astype(np.uint8)
@@ -98,13 +100,15 @@ def preprocessing_exchange(frame):
     return boolImg, hsvImg
 
 
+""" Be careful while modifying HSV filter range, you may 
+    need to save warped images to the training set again """
 def preprocessing(frame):
     hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     boolImg = (
         np.logical_and(
             np.logical_and(
                 np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 150),
-                hsvImg[:, :, 1] >= 120,
+                hsvImg[:, :, 1] >= 130,
             ),
             hsvImg[:, :, 2] >= 70,
         )
@@ -128,7 +132,6 @@ def classify(image):
     x = torch.tensor(image).float().unsqueeze(0).unsqueeze(0)
     logits = model(x)
     idx = torch.argmax(logits, dim=1).item()
-    import pdb; pdb.set_trace()
     return idx
 
 def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(-10000.0, 200000.0)):
@@ -146,6 +149,9 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
         for i, contour in enumerate(contours):
             if cv2.contourArea(contour) < 100:
                 continue
+            x, y, w, h = cv2.boundingRect(contour)
+            if h/w > 1.5 or w/h > 1.5:
+                continue
             peri = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
             # print(len(approx))
@@ -153,9 +159,9 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
                 continue
             """ find warped rect """
             frame = cv2.drawContours(testImg.copy(), [approx], -1, (0, 255, 0), 1)
-            """ for debug """
-            cv2.imshow("frame", frame)
-            cv2.waitKey(1)
+            # """ for debug """
+            # cv2.imshow("frame", frame)
+            # cv2.waitKey(0)
 
             quads.append(approx)
             quads_f.append(approx.astype(float))
@@ -167,13 +173,9 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
             warped = cv2.bitwise_not(warped)
             cv2.imshow(f"warped {i}", warped)
-            cv2.waitKey(0)
+            if (cv2.waitKey(0) == ord('s')):
+                cv2.imwrite(f"warped_{i}.png", warped)
             print(f"warped {i}, classified: {classify(warped)}")
-            try:
-                cv2.destroyWindow(f"warped {i}")
-            except:
-                pass
-
 
 
     if projection_points:
