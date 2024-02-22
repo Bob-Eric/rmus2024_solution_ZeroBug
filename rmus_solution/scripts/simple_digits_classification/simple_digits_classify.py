@@ -1,0 +1,124 @@
+import torch
+from torch import nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+import os
+
+# 定义神经网络模型
+class CNN_digits(nn.Module):
+    def __init__(self, H_in, W_in, n_classes):
+        super(CNN_digits, self).__init__()
+        torch.zeros(1, 1, H_in, W_in)
+        self.H_in = H_in
+        self.W_in = W_in
+        self.n_classes = n_classes
+        self.norm = nn.BatchNorm2d(1)
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=5)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
+        self.conv2_drop = nn.Dropout2d()
+        self.conv3 = nn.Conv2d(16, 32, kernel_size=5)
+        self.conv3_drop = nn.Dropout2d()
+        # calc fc1's input size
+        tmp = torch.zeros(1, 1, H_in, W_in)
+        tmp = self.norm(tmp)
+        tmp = F.relu(F.max_pool2d(self.conv1(tmp), 2))
+        tmp = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(tmp)), 2))
+        tmp = F.relu(F.max_pool2d(self.conv3_drop(self.conv3(tmp)), 2))
+        d = tmp.flatten().shape[0]
+        # define fully connected layers
+        self.fc1 = nn.Linear(d, 256)
+        self.fc1_drop = nn.Dropout()
+        self.fc2 = nn.Linear(256, 64)
+        self.fc2_drop = nn.Dropout()
+        self.fc3 = nn.Linear(64, 9)
+
+    def forward(self, x):
+        ## x: (batch_size, 1, H_in, W_in)
+        x = torch.Tensor(x).view(-1, 1, self.H_in, self.W_in)
+        batch_size = x.shape[0]
+        x = self.norm(x)
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = F.relu(F.max_pool2d(self.conv3_drop(self.conv3(x)), 2))
+        x = x.view(batch_size, -1)
+        x = self.fc1_drop(F.relu(self.fc1(x)))
+        x = self.fc2_drop(F.relu(self.fc2(x)))
+        logits = self.fc3(x)
+        return logits
+
+
+# 定义训练循环
+def train(model:CNN_digits, device, train_loader, optimizer, epoch):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+
+        # print(target)
+        # if epoch % 20 == 0:
+        #     cv2.imshow("data", data[0].permute(1, 2, 0).numpy())
+        #     cv2.waitKey(0)
+            
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = torch.mean(F.cross_entropy(output, target))
+        loss.backward()
+        optimizer.step()
+        if epoch % 20 == 0:
+            print(f'Train Epoch: {epoch}\tLoss: {loss.item():.6f}')
+
+def rotate_images():
+    from PIL import Image
+    # 指定图像文件夹路径
+    folder_path = 'templates'
+
+    # 递归遍历文件夹中的所有文件
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for filename in filenames:
+            if filename.endswith('.png') or filename.endswith('.jpg'):  # 检查文件是否为图像
+                # 读取图像
+                img = Image.open(os.path.join(dirpath, filename))
+            
+                # 旋转图像并保存
+                for angle in [90, 180, 270]:
+                    img_rotated = img.rotate(angle)
+                    # 生成新的文件名
+                    new_filename = os.path.splitext(filename)[0] + '_rotated_' + str(angle) + os.path.splitext(filename)[1]
+                    img_rotated.save(os.path.join(dirpath, new_filename))
+
+def main():
+    # 定义数据加载器
+    transform = transforms.Compose([
+        transforms.Resize((50, 50)),
+        transforms.Grayscale(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor()
+    ])
+    train_data = datasets.ImageFolder(root='templates', transform=transform)
+    train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+
+    # 初始化模型和优化器
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = CNN_digits(50, 50, 9).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    # 开始训练
+    if not os.path.exists("model.pth"):
+        for epoch in range(1, 1000 + 1):
+            train(model, device, train_loader, optimizer, epoch)
+        torch.save(model.state_dict(), "model.pth")
+    
+    # 加载模型
+    model.load_state_dict(torch.load("model.pth"))
+    model.eval()
+    
+    for data, target in train_loader:
+        data, target = data.to(device), target.to(device)
+        output = model(data)
+        pred = output.argmax(dim=1, keepdim=True)
+        print(f"Predictions\t: {pred.flatten().tolist()}")
+        print(f"Targets    \t: {target.flatten().tolist()}")
+        print(f"acc: {torch.sum(pred.flatten() == target.flatten()).item() / len(pred.flatten())}")
+
+if __name__ == '__main__':
+    main()
