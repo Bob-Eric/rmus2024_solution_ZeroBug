@@ -2,8 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import rospy
-from std_msgs.msg import UInt8MultiArray, Int32MultiArray
+from std_msgs.msg import UInt8MultiArray
+from geometry_msgs.msg import Pose
 from rmus_solution.srv import switch, setgoal, graspsignal
+import numpy as np
+import quaternion
 
 
 def get_boxid_blockid_inorder(gameinfo):
@@ -64,15 +67,21 @@ if __name__ == "__main__":
 
         try:
             rospy.sleep(0.5)
-            blockinfo = rospy.wait_for_message(
-                "/get_blockinfo", Int32MultiArray, timeout=0.1
+            blockinfo: Pose = rospy.wait_for_message(
+                "/get_blockinfo", Pose, timeout=0.1
             )
             rospy.sleep(0.5)
-            blockinfo2 = rospy.wait_for_message(
-                "/get_blockinfo", Int32MultiArray, timeout=0.1
+            blockinfo2: Pose = rospy.wait_for_message(
+                "/get_blockinfo", Pose, timeout=0.1
             )
 
-            if blockinfo.data[-1] != blockinfo2.data[-1]:
+            pos_1 = np.array(
+                [blockinfo.position.x, blockinfo.position.y, blockinfo.position.z]
+            )
+            pos_2 = np.array(
+                [blockinfo2.position.x, blockinfo2.position.y, blockinfo2.position.z]
+            )
+            if np.linalg.norm(pos_1 - pos_2) > 0.05:
                 rospy.logwarn("Catch Falied")
                 rospy.sleep(3.0)
                 trimer_response = trimer(1, "")

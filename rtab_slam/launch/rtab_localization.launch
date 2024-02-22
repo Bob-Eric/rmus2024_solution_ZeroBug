@@ -1,0 +1,7 @@
+<launch>
+    <include file="$(find rtab_slam)/launch/rtab_mapping.launch">
+        <arg name="localization" default="true" />
+        <arg name="rviz" default="false" />
+        <arg name="odometry" default="ekf" />
+    </include>
+</launch>
