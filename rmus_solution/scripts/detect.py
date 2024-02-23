@@ -127,7 +127,11 @@ model = CNN_digits(50, 50, 9)
 model.load_state_dict(torch.load(file_path + '/simple_digits_classification/model.pth'))
 model.eval()
 def classify(image):
-    # `image`: grayscale image
+    """ `image`: grayscale image. (h, w) """
+    # if black digit on white background, invert the image
+    if np.mean(image[:, 0]) > 127:  # Note: it wouldn't suffice to only check pixel at (0, 0)
+        image = cv2.bitwise_not(image)
+
     image = cv2.resize(image, (50, 50))
     x = torch.tensor(image).float().unsqueeze(0).unsqueeze(0)
     logits = model(x)
@@ -150,7 +154,7 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             if cv2.contourArea(contour) < 100:
                 continue
             x, y, w, h = cv2.boundingRect(contour)
-            if h/w > 1.5 or w/h > 1.5:
+            if h/w > 2 or w/h > 2:
                 continue
             peri = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
@@ -159,23 +163,23 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
                 continue
             """ find warped rect """
             frame = cv2.drawContours(testImg.copy(), [approx], -1, (0, 255, 0), 1)
-            # """ for debug """
+            # # """ for debug """
             # cv2.imshow("frame", frame)
             # cv2.waitKey(0)
 
             quads.append(approx)
             quads_f.append(approx.astype(float))
 
-            src = approx.astype(np.float32)
-            l = 200
-            dst = np.array([[l-1, 0], [0, 0], [0, l-1], [l-1, l-1]], dtype=np.float32)
-            M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
-            warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
-            warped = cv2.bitwise_not(warped)
-            cv2.imshow(f"warped {i}", warped)
-            if (cv2.waitKey(0) == ord('s')):
-                cv2.imwrite(f"warped_{i}.png", warped)
-            print(f"warped {i}, classified: {classify(warped)}")
+            # src = approx.astype(np.float32)
+            # l = 200
+            # dst = np.array([[0, 0], [0, l-1], [l-1, l-1], [l-1, 0]], dtype=np.float32)
+            # M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
+            # warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
+            # warped = cv2.bitwise_not(warped)
+            # cv2.imshow(f"warped {i}", warped)
+            # if (cv2.waitKey(0) == ord('s')):
+            #     cv2.imwrite(f"warped_{i}.png", warped)
+            # print(f"warped {i}, classified: {classify(warped)}")
 
 
     if projection_points:
@@ -184,7 +188,7 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
         quads_prj = []
         area_list = []
 
-        block_size = 0.045
+        block_size = 0.05
         model_object = np.array(
             [
                 (0 - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
@@ -208,7 +212,7 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             for t in range(len(projectedPoints)):
                 err += np.linalg.norm(projectedPoints[t] - model_image[t])
 
-            area = cv2.contourArea(quad.astype(np.int))
+            area = cv2.contourArea(quad.astype(np.int32))
             if (
                 err / area < 0.005
                 and tvec[1] > height_range[0]
@@ -224,15 +228,19 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             quads,
             [[0, 0, 0] for _ in quads],
             [[0, 0, 0] for _ in quads],
-            [cv2.contourArea(quad.astype(np.int)) for quad in quads],
+            [cv2.contourArea(quad.astype(np.int32)) for quad in quads],
             quads,
         )
 
+# def classification(frame, quads, template_ids=range(1, 9)):
+#     quads_ID = []
+#     minpoints_list = []
+#     warped_img_list = []
 
 def classification(frame, quads, template_ids=range(1, 9)):
     quads_ID = []
     minpoints_list = []
-    wrapped_img_list = []
+    warpped_img_list = []
     for i in range(len(quads)):
         points_src = np.array(
             [
@@ -250,7 +258,7 @@ def classification(frame, quads, template_ids=range(1, 9)):
         )
         out_img = cv2.cvtColor(out_img, cv2.COLOR_BGR2GRAY)
         out_img = cv2.threshold(out_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-        wrapped_img_list.append(out_img)
+        warpped_img_list.append(out_img)
 
         resize = False
         if resize:
@@ -304,7 +312,7 @@ def classification(frame, quads, template_ids=range(1, 9)):
             quads_ID.append(-1)
             minpoints_list.append(min_diff)
 
-    return quads_ID, minpoints_list, wrapped_img_list
+    return quads_ID, minpoints_list, warpped_img_list
 
 
 def marker_detection(
@@ -330,7 +338,7 @@ def marker_detection(
     quads, tvec_list, rvec_list, area_list, ori_quads = square_detection(
         boolImg, camera_matrix, area_filter_size=area_filter_size, height_range=height_range
     )
-    quads_ID, minpoints_list, wrapped_img_list = classification(
+    quads_ID, minpoints_list, warpped_img_list = classification(
         frame, quads, template_ids=template_ids
     )
     if verbose:
@@ -357,6 +365,6 @@ def marker_detection(
         [area_list[_] for _ in ids],
         [tvec_list[_] for _ in ids],
         [rvec_list[_] for _ in ids],
-        wrapped_img_list,
+        warpped_img_list,
         minpoints_list,
     )

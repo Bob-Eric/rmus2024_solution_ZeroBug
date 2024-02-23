@@ -259,7 +259,7 @@ class Processor:
                     [[last_info[5], last_info[6]]],
                     [[last_info[7], last_info[8]]],
                 ],
-                dtype=np.int,
+                dtype=np.int32,
             )
             depth = self.get_current_depth(old_quads)  # bug
             self.uint32data[blockid - 1][10] = depth
