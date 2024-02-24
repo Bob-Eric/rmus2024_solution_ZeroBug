@@ -6,7 +6,6 @@ from std_msgs.msg import UInt8MultiArray
 from geometry_msgs.msg import Pose
 from rmus_solution.srv import switch, setgoal, graspsignal
 import numpy as np
-import quaternion
 
 
 def get_boxid_blockid_inorder(gameinfo):
