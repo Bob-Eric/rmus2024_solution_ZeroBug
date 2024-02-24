@@ -11,6 +11,8 @@ from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
 from simple_pid import PID
+from dynamic_reconfigure.server import Server
+from rmus_solution.cfg import manipulater_PIDConfig
 
 
 class manipulater:
@@ -32,11 +34,27 @@ class manipulater:
         self.desired_cube_position = [0.385, 0.0]
         self.xy_goal_tolerance = [0.02, 0.005]
         pid_cal_time = 1 / 30
+
+        self.pid_P = 8.0
+        self.pid_I = 8.0
+        self.pid_D = 0.0
+        self.xy_seperate_I_threshold = [0.1, 0.1]
+
         self.pos_x_pid = PID(
-            0.5, 0.0, 0.0, self.desired_cube_position[0], pid_cal_time, (-0.5, 0.5)
+            self.pid_P,
+            self.pid_I,
+            self.pid_D,
+            self.desired_cube_position[0],
+            pid_cal_time,
+            (-0.5, 0.5),
         )
         self.pos_y_pid = PID(
-            0.5, 0.0, 0.0, self.desired_cube_position[1], pid_cal_time, (-0.5, 0.5)
+            self.pid_P,
+            self.pid_I,
+            self.pid_D,
+            self.desired_cube_position[1],
+            pid_cal_time,
+            (-0.5, 0.5),
         )
 
         self.ros_rate = 30
@@ -45,6 +63,25 @@ class manipulater:
         self.service = rospy.Service(
             "/let_manipulater_work", graspsignal, self.trimerworkCallback
         )
+        self.server = Server(manipulater_PIDConfig, self.dynamic_reconfigure_callback)
+
+    def dynamic_reconfigure_callback(self, config: manipulater_PIDConfig, level: int):
+        self.pid_P = config["Kp"]
+        self.pid_I = config["Ki"]
+        self.pid_D = config["Kd"]
+        self.pos_x_pid.Kp = self.pid_P
+        self.pos_x_pid.Ki = self.pid_I
+        self.pos_x_pid.Kd = self.pid_D
+        self.pos_y_pid.Kp = self.pid_P
+        self.pos_y_pid.Ki = self.pid_I
+        self.pos_y_pid.Kd = self.pid_D
+        self.pos_x_pid.reset()
+        self.pos_y_pid.reset()
+        self.xy_seperate_I_threshold = [
+            config["x_seperate_I_threshold"],
+            config["y_seperate_I_threshold"],
+        ]
+        return config
 
     def markerPoseLock(self, msg: MarkerInfoList):
         for markerInfo in MarkerInfoList.markerInfoList:
@@ -142,7 +179,8 @@ class manipulater:
     def place_cube(self, rate):
         rospy.loginfo("First trim then place")
         self.pre()
-
+        self.pos_x_pid.reset()
+        self.pos_y_pid.reset()
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
@@ -196,7 +234,8 @@ class manipulater:
         self.open_gripper()
         rospy.sleep(0.1)
         resp = graspsignalResponse()
-
+        self.pos_x_pid.reset()
+        self.pos_y_pid.reset()
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
@@ -242,12 +281,29 @@ class manipulater:
     def cal_cmd_vel_pid(self, target_pos):
         cmd_vel = [0.0, 0.0, 0.0]
 
+        if (
+            abs(target_pos[0] - self.desired_cube_position[0])
+            < self.xy_seperate_I_threshold[0]
+        ):
+            self.pos_x_pid.Ki = self.pid_I
+        else:
+            self.pos_x_pid.Ki = 0.0
+
+        if (
+            abs(target_pos[1] - self.desired_cube_position[1])
+            < self.xy_seperate_I_threshold[1]
+        ):
+            self.pos_y_pid.Ki = self.pid_I
+        else:
+            self.pos_y_pid.Ki = 0.0
+
         output_x = -self.pos_x_pid(target_pos[0])
         output_y = -self.pos_y_pid(target_pos[1])
-        if abs(output_x) < 0.1:
-            output_x = np.sign(output_x) * 0.1
-        if abs(output_y) < 0.1:
-            output_y = np.sign(output_y) * 0.1
+        # if abs(output_x) < 0.1:
+        #     output_x = np.sign(output_x) * 0.1
+        # if abs(output_y) < 0.1:
+        #     output_y = np.sign(output_y) * 0.1
+        rospy.loginfo(f"output_x: {output_x}, output_y: {output_y}")
         cmd_vel[0] = output_x
         cmd_vel[1] = output_y
         cmd_vel[2] = 0
@@ -300,4 +356,5 @@ class manipulater:
 if __name__ == "__main__":
     rospy.init_node("manipulater_node", anonymous=True)
     rter = manipulater()
+
     rospy.spin()
