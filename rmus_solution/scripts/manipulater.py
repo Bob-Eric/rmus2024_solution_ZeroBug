@@ -4,13 +4,13 @@
 import threading
 import numpy as np
 from scipy.spatial.transform import Rotation as sciR
-
 import rospy
 from geometry_msgs.msg import Twist, Pose, Point
 from rmus_solution.srv import graspsignal, graspsignalResponse
-
+from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
+from simple_pid import PID
 
 
 class manipulater:
@@ -20,9 +20,24 @@ class manipulater:
         self.cmd_vel_puber = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
         rospy.Subscriber("/get_blockinfo", Pose, self.markerPoseCb, queue_size=1)
 
+        rospy.Subscriber(
+            "/get_marker_info", MarkerInfoList, self.markerPoseLock, queue_size=1
+        )
+
         self.current_marker_poses = None
-        self.image_time_now = 0
-        self.observation = np.array([0.0, 0.0])
+        self.image_time_now = 0.0
+
+        self.desired_cube_id = 0
+
+        self.desired_cube_position = [0.385, 0.0]
+        self.xy_goal_tolerance = [0.02, 0.02]
+        pid_cal_time = 1 / 30
+        self.pos_x_pid = PID(
+            0.5, 0.0, 0.0, self.desired_cube_position[0], pid_cal_time, (-0.5, 0.5)
+        )
+        self.pos_y_pid = PID(
+            0.5, 0.0, 0.0, self.desired_cube_position[1], pid_cal_time, (-0.5, 0.5)
+        )
 
         self.ros_rate = 30
         self.tfBuffer = tf2_ros.Buffer()
@@ -31,12 +46,18 @@ class manipulater:
             "/let_manipulater_work", graspsignal, self.trimerworkCallback
         )
 
+    def markerPoseLock(self, msg: MarkerInfoList):
+        for markerInfo in MarkerInfoList.markerInfoList:
+            markerInfo: MarkerInfo
+            if markerInfo.id == self.desired_cube_id:
+                self.current_marker_poses: Pose = markerInfo.pose
+                self.image_time_now = rospy.get_time()
+
     def markerPoseCb(self, msg):
         self.current_marker_poses = msg
         self.image_time_now = rospy.get_time()
-        self.observation = [msg.position.x, msg.position.z]
 
-    def getTargetPosAndAngleInBaseLinkFrame(self, pose_in_cam):
+    def getTargetPosAndAngleInBaseLinkFrame(self, pose_in_cam: Pose):
         if not self.tfBuffer.can_transform(
             "base_link", "camera_aligned_depth_to_color_frame_correct", rospy.Time.now()
         ):
@@ -67,7 +88,7 @@ class manipulater:
 
         return pos, angle
 
-    def sendBaseVel(self, vel):
+    def sendBaseVel(self, vel: list):
         twist = Twist()
         twist.linear.z = 0.0
         twist.linear.x = vel[0]
@@ -77,7 +98,9 @@ class manipulater:
         twist.angular.y = 0.0
         self.cmd_vel_puber.publish(twist)
 
+    # req.mode 1: Reset, 2: Grasp, 3: Place
     def trimerworkCallback(self, req):
+        # Reset the arm
         if req.mode == 0:
             self.reset_arm()
             rospy.sleep(0.2)
@@ -87,13 +110,16 @@ class manipulater:
             resp.response = "reset arm position and open gripper"
             return resp
 
+        # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.image_time_now > 0.1:
             rospy.loginfo("latency detected!")
+
+            # Go back for 0.5s
             if rospy.get_time() - initial_time > 3.0:
                 self.sendBaseVel([-0.2, 0.0, 0.0])
                 rospy.sleep(0.5)
-                self.sendBaseVel([-0.2, 0.0, 0.0])
+                self.sendBaseVel([0.0, 0.0, 0.0])
             if rospy.get_time() - initial_time > 6.0:
                 resp = graspsignalResponse()
                 resp.res = True
@@ -102,21 +128,16 @@ class manipulater:
             rospy.sleep(0.1)
 
         rate = rospy.Rate(self.ros_rate)
-
         resp = graspsignalResponse()
 
+        # Grasp cube
         if req.mode == 1:
             rospy.loginfo("First trim then grasp")
             rospy.loginfo("Trim to the right place")
 
             self.open_gripper()
             rospy.sleep(0.1)
-            adjust_time = 0.1
 
-            flag = 0
-            y_threshold_p = 0.018
-            y_threshold_n = 0.018
-            x_dis_tar = 0.385
             while not rospy.is_shutdown():
                 target_marker_pose = self.current_marker_poses
                 if target_marker_pose is None:
@@ -125,50 +146,8 @@ class manipulater:
                 target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
                     target_marker_pose
                 )
-                cmd_vel = [0.0, 0.0, 0.0]
 
-                if (target_pos[0] - x_dis_tar) > 0.13:
-                    cmd_vel[0] = 0.3
-                elif (target_pos[0] - x_dis_tar) > 0.08:
-                    cmd_vel[0] = 0.2
-                elif (target_pos[0] - x_dis_tar) < -0.08:
-                    cmd_vel[0] = -0.15
-                elif (target_pos[0] - x_dis_tar) > 0.07:
-                    cmd_vel[0] = 0.15
-                elif (target_pos[0] - x_dis_tar) < -0.07:
-                    cmd_vel[0] = -0.15
-                elif (target_pos[0] - x_dis_tar) > 0.02:
-                    cmd_vel[0] = 0.12
-                elif (target_pos[0] - x_dis_tar) < -0.02:
-                    cmd_vel[0] = -0.12
-
-                if (target_pos[1] - 0.0) > 0.035 or (target_pos[1] - 0.0) < -0.035:
-                    cmd_vel[0] = 0.0
-
-                if (target_pos[1] - 0.0) > y_threshold_p:
-                    if flag == 0:
-                        flag = 1
-                        y_threshold_p += 0.01
-                    cmd_vel[1] = 0.11
-                elif (target_pos[1] - 0.0) < -y_threshold_n:
-                    if flag == 0:
-                        flag = 1
-                        y_threshold_n += 0.01
-                    cmd_vel[1] = -0.11
-
-                flag = 1
-
-                cmd_vel[2] = 0
-                if np.abs(target_pos[0] - x_dis_tar) <= 0.02 and (
-                    (target_pos[1] - 0.0) <= y_threshold_p
-                    and (0.0 - target_pos[1]) <= y_threshold_n
-                ):
-                    cmd_vel = [0.0, 0.0, 0.0]
-                self.sendBaseVel(cmd_vel)
-                if np.abs(target_pos[0] - x_dis_tar) <= 0.02 and (
-                    (target_pos[1] - 0.0) <= y_threshold_p
-                    and (0.0 - target_pos[1]) <= y_threshold_n
-                ):
+                if self.is_near_desired_position(target_pos):
                     pose = Pose()
                     pose.position.x = 0.19
                     pose.position.y = -0.08
@@ -180,7 +159,9 @@ class manipulater:
                     rospy.sleep(1.0)
                     rospy.loginfo("Place: reach the goal for placing.")
                     break
-                adjust_time += 0.0333
+                else:
+                    self.cal_cmd_vel_pid(target_pos)
+
                 rate.sleep()
 
             target_marker_pose = self.current_marker_poses
@@ -199,14 +180,10 @@ class manipulater:
             resp.response = str(target_angle)
             return resp
 
+        # Place cube
         elif req.mode == 2:
             rospy.loginfo("First trim then place")
-
             self.pre()
-            flag = 0
-            y_threshold_p = 0.018
-            y_threshold_n = 0.018
-            x_dis_tar = 0.385
 
             while not rospy.is_shutdown():
                 target_marker_pose = self.current_marker_poses
@@ -216,38 +193,7 @@ class manipulater:
                 target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
                     target_marker_pose
                 )
-                cmd_vel = [0.0, 0.0, 0.0]
-
-                if (target_pos[0] - x_dis_tar) > 0.1:
-                    cmd_vel[0] = 0.14
-                elif (target_pos[0] - x_dis_tar) < -0.1:
-                    cmd_vel[0] = -0.14
-                elif (target_pos[0] - x_dis_tar) > 0.02:
-                    cmd_vel[0] = 0.12
-                elif (target_pos[0] - x_dis_tar) < -0.02:
-                    cmd_vel[0] = -0.12
-
-                if (target_pos[1] - 0.0) > 0.05 or (target_pos[1] - 0.0) < -0.05:
-                    cmd_vel[0] = 0.0
-
-                if (target_pos[1] - 0.0) > y_threshold_p:
-                    if flag == 0:
-                        flag = 1
-                        y_threshold_p += 0.01
-                    cmd_vel[1] = 0.11
-                elif (target_pos[1] - 0.0) < -y_threshold_n:
-                    if flag == 0:
-                        flag = 1
-                        y_threshold_n += 0.01
-                    cmd_vel[1] = -0.11
-                flag = 1
-
-                cmd_vel[2] = 0
-                self.sendBaseVel(cmd_vel)
-                if np.abs(target_pos[0] - x_dis_tar) <= 0.02 and (
-                    (target_pos[1] - 0.0) <= y_threshold_p
-                    and (0.0 - target_pos[1]) <= y_threshold_n
-                ):
+                if self.is_near_desired_position(target_pos):
                     rospy.loginfo("Trim well in the all dimention, going open loop")
                     self.sendBaseVel([0.0, 0.0, 0.0])
                     rospy.sleep(1.0)
@@ -258,6 +204,10 @@ class manipulater:
                     self.sendBaseVel([0.0, 0.0, 0.0])
                     rospy.loginfo("Place: reach the goal for placing.")
                     break
+
+                else:
+                    self.cal_cmd_vel_pid(target_pos)
+
                 rate.sleep()
 
             rospy.loginfo("Trim well in the horizon dimention")
@@ -280,6 +230,28 @@ class manipulater:
             resp.response = "Successfully Place"
 
         return resp
+
+    def cal_cmd_vel_pid(self, target_pos):
+        cmd_vel = [0.0, 0.0, 0.0]
+
+        output_x = -self.pos_x_pid(target_pos[0])
+        output_y = -self.pos_y_pid(target_pos[1])
+        if abs(output_x) < 0.1:
+            output_x = np.sign(output_x) * 0.1
+        if abs(output_y) < 0.1:
+            output_y = np.sign(output_y) * 0.1
+        cmd_vel[0] = output_x
+        cmd_vel[1] = output_y
+        cmd_vel[2] = 0
+        self.sendBaseVel(cmd_vel)
+
+    def is_near_desired_position(self, target_pos):
+        return (
+            np.abs(target_pos[0] - self.desired_cube_position[0])
+            <= self.xy_goal_tolerance[0]
+            and (target_pos[1] - self.desired_cube_position[1])
+            <= self.xy_goal_tolerance[1]
+        )
 
     def open_gripper(self):
         open_gripper_msg = Point()
