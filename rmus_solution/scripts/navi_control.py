@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from math import pi
-
 import rospy
+from math import pi
 from actionlib_msgs.msg import GoalID
 from geometry_msgs.msg import Twist, PoseStamped
 from move_base_msgs.msg import MoveBaseActionResult
-from rmus_solution.srv import setgoal, setgoalResponse
-
+from rmus_solution.srv import setgoal, setgoalResponse, setgoalRequest
 import tf2_ros
 from tf_conversions import transformations
+from enum import IntEnum
+
+
+class MissionResquest(IntEnum):
+    Home = 0
+    MiningArea_1 = 1
+    MiningArea_2 = 2
+    MiningArea_3 = 3
+    Station_1 = 4
+    Station_2 = 5
+    Station_3 = 6
+    Noticeboard = 7
+    Park = 8
+
+    End = 9
 
 
 class router:
@@ -23,20 +36,17 @@ class router:
     def __init__(self) -> None:
         self.M_reach_goal = False
 
-        # 所有观察点的索引、名称、位置(posi_x,pose_y,yaw)、误差容限(posi,angle)
+        # 所有观察点的索引、名称、位置(posi_x,pose_y,yaw)
         self.mission_point = {
-            0: ("home", [0.00, 0.00, 0.00], [0.02, 0.05]),
-            1: ("cube1", [0.264, 3.1, pi / 4], [0.05, 0.1]),  # 从起点来的
-            10: ("cube1", [0.60, 3.20, pi], [0.05, 0.1]),  # 从交换站来的
-            2: ("cube2", [0.575, 0.989, -pi], [0.025, 0.05]),
-            3: ("cube3", [0.575, 0.989, -pi], [0.075, 0.1]),
-            4: ("cube4", [1.96, 0.00768, 0.00], [0.05, 0.1]),
-            5: ("cube5", [1.96, 0.00768, 0.00], [0.05, 0.1]),
-            6: ("station1", [1.18, 1.91, 0.00], [0.075, 0.1]),
-            7: ("station2", [1.18, 1.80, 0.00], [0.075, 0.1]),
-            8: ("station3", [1.18, 1.65, 0.00], [0.075, 0.1]),
-            9: ("noticeboard", [0.00, 1.60, 0.00], [0.05, 0.1]),
-            11: ("park", [3.16, -0.795, 0.00], [0.02, 0.05]),
+            MissionResquest.Home: (0.00, 0.00, 0.00),
+            MissionResquest.MiningArea_1: (0.5, 0.5, 3 * pi / 4),
+            MissionResquest.MiningArea_2: (1.3, 3.0, 3 * pi / 4),
+            MissionResquest.MiningArea_3: (1.96, 0.00768, 0.00),
+            MissionResquest.Station_1: (1.18, 1.91, 0.00),
+            MissionResquest.Station_2: (1.18, 1.80, 0.00),
+            MissionResquest.Station_3: (1.18, 1.65, 0.00),
+            MissionResquest.Noticeboard: (0.00, 0.00, pi / 4),
+            MissionResquest.Park: (3.16, -0.795, 0.00),
         }
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -50,11 +60,7 @@ class router:
                 )
                 rospy.loginfo("Get tf from map to base_link")
                 break
-            except (
-                tf2_ros.LookupException,
-                tf2_ros.ConnectivityException,
-                tf2_ros.ExtrapolationException,
-            ):
+            except:
                 rospy.logwarn("Waiting for tf from map to base_link")
             rospy.sleep(0.5)
 
@@ -67,15 +73,11 @@ class router:
         self.cancel_goal_puber = rospy.Publisher(
             "/move_base/cancel", GoalID, queue_size=10
         )
-        self.get_trapped_cnt = (
-            0  # 单点被困计数,任务完成后或者current point变换后都会清零
-        )
 
         self.service = rospy.Service(
             "/set_navigation_goal", setgoal, self.setgoalCallback
         )
-        self.mission = -1  # 当前的任务 int valid:{0,1,2,3,4,5}
-        self.last_mission = -1
+        self.mission = MissionResquest.End
 
     def MoveBaseResultCallback(self, msg: MoveBaseActionResult):
         if msg.status.status == 3:
@@ -86,11 +88,11 @@ class router:
         simple_goal.header.stamp = rospy.Time.now()
 
         simple_goal.header.frame_id = "map"
-        simple_goal.pose.position.x = self.mission_point[self.mission][1][0]
-        simple_goal.pose.position.y = self.mission_point[self.mission][1][1]
+        simple_goal.pose.position.x = self.mission_point[self.mission][0]
+        simple_goal.pose.position.y = self.mission_point[self.mission][1]
         simple_goal.pose.position.z = 0.0
         quat = transformations.quaternion_from_euler(
-            0.0, 0.0, self.mission_point[self.mission][1][2]
+            0.0, 0.0, self.mission_point[self.mission][2]
         )
         simple_goal.pose.orientation.x = quat[0]
         simple_goal.pose.orientation.y = quat[1]
@@ -98,33 +100,25 @@ class router:
         simple_goal.pose.orientation.w = quat[3]
         self.goal_puber.publish(simple_goal)
 
-    def setgoalCallback(self, req):
+    def setgoalCallback(self, req: setgoalRequest):
         resp = setgoalResponse()
         rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
         rospy.loginfo("req: call = {} point = {}".format(req.call, req.point))
-        rospy.loginfo("last mission = {}".format(self.last_mission))
 
-        if 0 <= req.point <= len(self.mission_point):
-            if req.point == 1 and (5 < self.last_mission < 9):
-                self.mission = 10
-            else:
-                self.mission = req.point
+        if 0 <= req.point < MissionResquest.End:
+            self.mission = MissionResquest(req.point)
             self.pubMovebaseMissionGoal()
-
             self.M_reach_goal = False
 
             r = rospy.Rate(10)
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
                     rospy.loginfo(
-                        "Reach Goal {}!".format(self.mission_point[req.point][0])
+                        "Reach Goal {}!".format(self.mission_point[self.mission][0])
                     )
                     resp.res = True
                     resp.response = "Accomplish!"
-
-                    self.last_mission = self.mission
-                    self.mission = -1
-                    self.get_trapped_cnt = 0
+                    self.mission = MissionResquest.End
                     break
 
                 r.sleep()
