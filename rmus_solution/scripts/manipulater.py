@@ -20,6 +20,7 @@ class TrimerworkRequest(IntEnum):
     Reset = 0
     Grasp = 1
     Place = 2
+    PlaceHighly = 3
 
 
 class manipulater:
@@ -65,6 +66,8 @@ class manipulater:
             (-0.5, 0.5),
         )
 
+        self.target_pos_old = np.array([100, 100, 100])
+
         self.ros_rate = 30
         self.tfBuffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
@@ -73,7 +76,7 @@ class manipulater:
         )
         self.server = Server(manipulater_PIDConfig, self.dynamic_reconfigure_callback)
 
-    def dynamic_reconfigure_callback(self, config: manipulater_PIDConfig, level: int):
+    def dynamic_reconfigure_callback(self, config: dict, level: int):
         self.pid_P = config["Kp"]
         self.pid_I = config["Ki"]
         self.pid_D = config["Kd"]
@@ -133,20 +136,10 @@ class manipulater:
 
         return pos, angle
 
-    def sendBaseVel(self, vel: list):
-        twist = Twist()
-        twist.linear.z = 0.0
-        twist.linear.x = vel[0]
-        twist.linear.y = vel[1]
-        twist.angular.z = vel[2]
-        twist.angular.x = 0.0
-        twist.angular.y = 0.0
-        self.cmd_vel_puber.publish(twist)
-
     def trimerworkCallback(self, req):
         # Reset the arm
         if req.mode == TrimerworkRequest.Reset:
-            self.reset_arm()
+            self.arm_reset()
             rospy.sleep(0.2)
             self.open_gripper()
             resp = graspsignalResponse()
@@ -160,11 +153,11 @@ class manipulater:
             rospy.loginfo("latency detected!")
 
             # Go back for 0.5s
-            if rospy.get_time() - initial_time > 3.0:
+            if rospy.get_time() - initial_time > 1.0:
                 self.sendBaseVel([-0.2, 0.0, 0.0])
-                rospy.sleep(0.5)
+                rospy.sleep(0.1)
                 self.sendBaseVel([0.0, 0.0, 0.0])
-            if rospy.get_time() - initial_time > 6.0:
+            if rospy.get_time() - initial_time > 2.0:
                 resp = graspsignalResponse()
                 resp.res = True
                 resp.response = "Successfully Grasp fake"
@@ -178,12 +171,79 @@ class manipulater:
             return resp
 
         elif req.mode == TrimerworkRequest.Place:
-            resp = self.place_cube(rate)
+            resp = self.place_cube(rate, False)
+            return resp
+        elif req.mode == TrimerworkRequest.PlaceHighly:
+            resp = self.place_cube(rate, True)
             return resp
 
-    def place_cube(self, rate):
+    def grasp_cube(self, rate):
+        rospy.loginfo("First trim then grasp")
+        rospy.loginfo("Trim to the right place")
+
+        self.open_gripper()
+        rospy.sleep(0.1)
+        resp = graspsignalResponse()
+        self.pos_x_pid.reset()
+        self.pos_y_pid.reset()
+
+        not_update_cnt = 0
+
+        while not rospy.is_shutdown():
+            target_marker_pose = self.current_marker_poses
+            if target_marker_pose is None:
+                continue
+
+            target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
+                target_marker_pose
+            )
+
+            if np.linalg.norm(target_pos - self.target_pos_old) < 0.001:
+                if not_update_cnt > 60:
+                    rospy.loginfo("target_pos is not updated")
+                    resp.res = False
+                    return resp
+                not_update_cnt += 1
+            else:
+                not_update_cnt = 0
+            self.target_pos_old = target_pos
+
+            if self.is_near_desired_position(target_pos):
+                self.sendBaseVel([0.25, 0.0, 0.0])
+                rospy.sleep(0.3)
+                self.sendBaseVel([0.0, 0.0, 0.0])
+                rospy.sleep(1.0)
+                self.arm_grasp_pos()
+                rospy.sleep(1.0)
+                rospy.loginfo("Place: reach the goal for placing.")
+
+                target_marker_pose = self.current_marker_poses
+                self.close_gripper()
+                rospy.sleep(1.0)
+
+                self.close_gripper()
+                rospy.sleep(1.0)
+                self.arm_reset()
+
+                self.sendBaseVel([-0.3, 0.0, 0.0])
+                rospy.sleep(0.4)
+                self.sendBaseVel([0.0, 0.0, 0.0])
+
+                resp.res = True
+                resp.response = str(target_angle)
+                break
+            else:
+                self.cal_cmd_vel_pid(target_pos)
+
+            rate.sleep()
+        return resp
+
+    def place_cube(self, rate, should_place_highly=False):
         rospy.loginfo("First trim then place")
-        self.pre()
+        if should_place_highly:
+            self.arm_place_highly_pos()
+        else:
+            self.arm_place_pos()
         self.pos_x_pid.reset()
         self.pos_y_pid.reset()
         while not rospy.is_shutdown():
@@ -214,7 +274,7 @@ class manipulater:
                 rospy.sleep(1.0)
                 self.open_gripper()
                 rospy.sleep(1.0)
-                reset_thread = threading.Thread(target=self.reset_arm)
+                reset_thread = threading.Thread(target=self.arm_reset)
                 reset_thread.start()
 
                 self.sendBaseVel([-0.3, 0.0, 0.0])
@@ -232,56 +292,13 @@ class manipulater:
             rate.sleep()
         return resp
 
-    def grasp_cube(self, rate):
-        rospy.loginfo("First trim then grasp")
-        rospy.loginfo("Trim to the right place")
-
-        self.open_gripper()
-        rospy.sleep(0.1)
-        resp = graspsignalResponse()
-        self.pos_x_pid.reset()
-        self.pos_y_pid.reset()
-        while not rospy.is_shutdown():
-            target_marker_pose = self.current_marker_poses
-            if target_marker_pose is None:
-                continue
-
-            target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
-                target_marker_pose
-            )
-
-            if self.is_near_desired_position(target_pos):
-                pose = Pose()
-                pose.position.x = 0.19
-                pose.position.y = -0.08
-                self.sendBaseVel([0.25, 0.0, 0.0])
-                rospy.sleep(0.3)
-                self.sendBaseVel([0.0, 0.0, 0.0])
-                rospy.sleep(1.0)
-                self.arm_position_pub.publish(pose)
-                rospy.sleep(1.0)
-                rospy.loginfo("Place: reach the goal for placing.")
-
-                target_marker_pose = self.current_marker_poses
-                self.close_gripper()
-                rospy.sleep(1.0)
-
-                self.close_gripper()
-                rospy.sleep(1.0)
-                self.reset_arm()
-
-                self.sendBaseVel([-0.3, 0.0, 0.0])
-                rospy.sleep(0.4)
-                self.sendBaseVel([0.0, 0.0, 0.0])
-
-                resp.res = True
-                resp.response = str(target_angle)
-                break
-            else:
-                self.cal_cmd_vel_pid(target_pos)
-
-            rate.sleep()
-        return resp
+    def is_near_desired_position(self, target_pos):
+        return (
+            abs(target_pos[0] - self.desired_cube_position[0])
+            <= self.xy_goal_tolerance[0]
+            and abs(target_pos[1] - self.desired_cube_position[1])
+            <= self.xy_goal_tolerance[1]
+        )
 
     def cal_cmd_vel_pid(self, target_pos):
         cmd_vel = [0.0, 0.0, 0.0]
@@ -304,23 +321,27 @@ class manipulater:
 
         output_x = -self.pos_x_pid(target_pos[0])
         output_y = -self.pos_y_pid(target_pos[1])
-        # if abs(output_x) < 0.1:
-        #     output_x = np.sign(output_x) * 0.1
-        # if abs(output_y) < 0.1:
-        #     output_y = np.sign(output_y) * 0.1
-        rospy.loginfo(f"output_x: {output_x}, output_y: {output_y}")
+        # rospy.loginfo(f"output_x: {output_x}, output_y: {output_y}")
         cmd_vel[0] = output_x
         cmd_vel[1] = output_y
         cmd_vel[2] = 0
         self.sendBaseVel(cmd_vel)
 
-    def is_near_desired_position(self, target_pos):
-        return (
-            abs(target_pos[0] - self.desired_cube_position[0])
-            <= self.xy_goal_tolerance[0]
-            and abs(target_pos[1] - self.desired_cube_position[1])
-            <= self.xy_goal_tolerance[1]
-        )
+    def arm_grasp_pos(self):
+        pose = Pose()
+        pose.position.x = 0.19
+        pose.position.y = -0.08
+        self.arm_position_pub.publish(pose)
+
+    def sendBaseVel(self, vel: list):
+        twist = Twist()
+        twist.linear.z = 0.0
+        twist.linear.x = vel[0]
+        twist.linear.y = vel[1]
+        twist.angular.z = vel[2]
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
+        self.cmd_vel_puber.publish(twist)
 
     def open_gripper(self):
         open_gripper_msg = Point()
@@ -338,7 +359,7 @@ class manipulater:
         rospy.loginfo("close the gripper")
         self.arm_gripper_pub.publish(close_gripper_msg)
 
-    def reset_arm(self):
+    def arm_reset(self):
         reset_arm_msg = Pose()
         reset_arm_msg.position.x = 0.1
         reset_arm_msg.position.y = 0.12
@@ -350,11 +371,18 @@ class manipulater:
         rospy.loginfo("reset the arm")
         self.arm_position_pub.publish(reset_arm_msg)
 
-    def pre(self):
+    def arm_place_pos(self):
         rospy.loginfo("<manipulater>: now prepare to grip")
         pose = Pose()
         pose.position.x = 0.21
-        pose.position.y = 0.0
+        pose.position.y = -0.02
+        self.arm_position_pub.publish(pose)
+
+    def arm_place_highly_pos(self):
+        rospy.loginfo("<manipulater>: now prepare to grip")
+        pose = Pose()
+        pose.position.x = 0.21
+        pose.position.y = 0.03
         self.arm_position_pub.publish(pose)
 
 
