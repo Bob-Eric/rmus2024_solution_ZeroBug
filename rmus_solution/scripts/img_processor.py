@@ -6,6 +6,7 @@ from geometry_msgs.msg import Pose
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
+from rmus_solution.msg import MarkerInfo, MarkerInfoList
 
 import cv2
 import numpy as np
