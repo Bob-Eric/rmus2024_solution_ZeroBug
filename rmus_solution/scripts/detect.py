@@ -100,9 +100,13 @@ def preprocessing_exchange(frame):
     return boolImg, hsvImg
 
 
-""" Be careful while modifying HSV filter range, you may 
-    need to save warped images to the training set again """
 def preprocessing(frame):
+    """ 
+    Processing the image to get the binary image with HSV red filter
+    Note:
+        Be careful while modifying HSV filter range, you may 
+        need to save warped images to the training set again
+    """
     hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     boolImg = (
         np.logical_and(
@@ -126,17 +130,26 @@ file_path = os.path.dirname(__file__)
 model = CNN_digits(50, 50, 9)
 model.load_state_dict(torch.load(file_path + '/simple_digits_classification/model.pth'))
 model.eval()
-def classify(image):
-    """ `image`: grayscale image. (h, w) """
+def classify(image, is_white_digit=True):
+    """ 
+    Input:
+        `image`: grayscale image. (h, w) 
+        `is_white_digit`: if the digit is white on black background, set it to True, otherwise False
+    Output:
+        `idx`: classified result. [0, 1, 2, 3, 4, 5] => block 1-6; 6-8 => block B, O, X; -1: unknown
+        `logits`: raw output of the model, softmax(logits) is the probability of each class
+    TODO: find more 'unknown' cases and add them to the training set
+    """
+    global model
     # if black digit on white background, invert the image
-    if np.mean(image[:, 0]) > 127:  # Note: it wouldn't suffice to only check pixel at (0, 0)
+    if not is_white_digit:
         image = cv2.bitwise_not(image)
 
     image = cv2.resize(image, (50, 50))
     x = torch.tensor(image).float().unsqueeze(0).unsqueeze(0)
     logits = model(x)
     idx = torch.argmax(logits, dim=1).item()
-    return idx
+    return idx, logits
 
 def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(-10000.0, 200000.0)):
     projection_points = True
@@ -147,7 +160,6 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
         grayImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     
-    testImg:np.ndarray = cv2.cvtColor(grayImg, cv2.COLOR_GRAY2BGR)
     if len(contours) > 0:
         contours = sorted(contours, key=cv2.contourArea, reverse=False)
         for i, contour in enumerate(contours):
@@ -161,15 +173,16 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             # print(len(approx))
             if len(approx) != 4:
                 continue
-            """ find warped rect """
-            frame = cv2.drawContours(testImg.copy(), [approx], -1, (0, 255, 0), 1)
-            # # """ for debug """
-            # cv2.imshow("frame", frame)
-            # cv2.waitKey(0)
-
+            """ warped rect found """
             quads.append(approx)
             quads_f.append(approx.astype(float))
 
+            ########## for debug ##########
+            # testImg = cv2.cvtColor(grayImg, cv2.COLOR_GRAY2BGR)
+            # frame = cv2.drawContours(testImg, [approx], -1, (0, 255, 0), 1)
+            # cv2.imshow("frame", frame)
+            # cv2.waitKey(0)
+            # # warp the image
             # src = approx.astype(np.float32)
             # l = 200
             # dst = np.array([[0, 0], [0, l-1], [l-1, l-1], [l-1, 0]], dtype=np.float32)
@@ -179,7 +192,12 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             # cv2.imshow(f"warped {i}", warped)
             # if (cv2.waitKey(0) == ord('s')):
             #     cv2.imwrite(f"warped_{i}.png", warped)
+            # import time
+            # t_sta = time.time()
+            # # classify
             # print(f"warped {i}, classified: {classify(warped)}")
+            # print(f"Time cost: {time.time() - t_sta}")
+            ########## debug end ##########
 
 
     if projection_points:
@@ -232,10 +250,32 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             quads,
         )
 
-# def classification(frame, quads, template_ids=range(1, 9)):
-#     quads_ID = []
-#     minpoints_list = []
-#     warped_img_list = []
+
+def classification_cnn(grayImg, quads):
+    """ use cnn to classify the digit, works better than template matching """
+    quads_ID = []
+    minpoints_list = []
+    warped_img_list = []
+
+    for i in range(len(quads)):
+        src = quads[i].astype(np.float32)
+        l = 50
+        dst = np.array([[0, 0], [0, l-1], [l-1, l-1], [l-1, 0]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
+        warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
+        ## save warped image
+        warped_img_list.append(warped)
+        idx, logits = classify(warped, is_white_digit=False)
+        prob_miss = 1 - torch.softmax(logits, dim=1)[:, idx]
+        quads_ID.append(idx + 1)
+        minpoints_list.append(prob_miss.item())
+        ########## for debug ##########
+        # cv2.imshow(f"warped {i}", warped)
+        # cv2.waitKey(0)
+        # print(logits)
+        ########## bug end ##########
+    return quads_ID, minpoints_list, warped_img_list
+
 
 def classification(frame, quads, template_ids=range(1, 9)):
     quads_ID = []
@@ -331,18 +371,18 @@ def marker_detection(
         boolImg, _ = preprocessing_exchange(tframe)
     else:
         boolImg, _ = preprocessing(frame)
-
-    # cv2.imshow("boolImg", copy.deepcopy(boolImg))
-    # cv2.waitKey(3)
     
     quads, tvec_list, rvec_list, area_list, ori_quads = square_detection(
         boolImg, camera_matrix, area_filter_size=area_filter_size, height_range=height_range
     )
-    quads_ID, minpoints_list, warpped_img_list = classification(
-        frame, quads, template_ids=template_ids
+    # quads_ID, minpoints_list, warpped_img_list = classification(
+    #     frame, quads, template_ids=template_ids
+    # )
+    quads_ID, minpoints_list, warpped_img_list = classification_cnn(
+        boolImg, quads
     )
     if verbose:
-        id = {1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "B", 7: "O", 8: "X", -1: "*"}
+        id = {0: "*", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "B", 8: "O", 9: "X"}
         for i in range(len(quads)):
             bbox = cv2.boundingRect(quads[i])
             try:
