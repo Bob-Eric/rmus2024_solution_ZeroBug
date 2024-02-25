@@ -13,9 +13,17 @@ import tf2_geometry_msgs
 from simple_pid import PID
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulater_PIDConfig
+from enum import IntEnum
+
+
+class TrimerworkRequest(IntEnum):
+    Reset = 0
+    Grasp = 1
+    Place = 2
 
 
 class manipulater:
+
     def __init__(self) -> None:
         self.arm_gripper_pub = rospy.Publisher("arm_gripper", Point, queue_size=2)
         self.arm_position_pub = rospy.Publisher("arm_position", Pose, queue_size=2)
@@ -135,10 +143,9 @@ class manipulater:
         twist.angular.y = 0.0
         self.cmd_vel_puber.publish(twist)
 
-    # req.mode 1: Reset, 2: Grasp, 3: Place
     def trimerworkCallback(self, req):
         # Reset the arm
-        if req.mode == 0:
+        if req.mode == TrimerworkRequest.Reset:
             self.reset_arm()
             rospy.sleep(0.2)
             self.open_gripper()
@@ -166,13 +173,11 @@ class manipulater:
 
         rate = rospy.Rate(self.ros_rate)
 
-        # Grasp cube
-        if req.mode == 1:
+        if req.mode == TrimerworkRequest.Grasp:
             resp = self.grasp_cube(rate)
             return resp
 
-        # Place cube
-        elif req.mode == 2:
+        elif req.mode == TrimerworkRequest.Place:
             resp = self.place_cube(rate)
             return resp
 
@@ -194,9 +199,9 @@ class manipulater:
                 self.sendBaseVel([0.0, 0.0, 0.0])
                 rospy.sleep(1.0)
                 self.sendBaseVel([0.25, 0.0, 0.0])
-                rospy.sleep(0.3)
+                rospy.sleep(0.2)
                 self.sendBaseVel([0.25, 0.0, 0.0])
-                rospy.sleep(0.3)
+                rospy.sleep(0.2)
                 self.sendBaseVel([0.0, 0.0, 0.0])
                 rospy.loginfo("Place: reach the goal for placing.")
 

@@ -6,6 +6,7 @@ from std_msgs.msg import UInt8MultiArray
 from geometry_msgs.msg import Pose
 from rmus_solution.srv import switch, setgoal, graspsignal
 import numpy as np
+from manipulater import TrimerworkRequest
 
 
 def get_boxid_blockid_inorder(gameinfo):
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     img_switch_mode = rospy.ServiceProxy("/image_processor_switch_mode", switch)
     rospy.sleep(2)
 
-    trim_res = trimer(0, "")
+    trim_res = trimer(TrimerworkRequest.Reset, "")
     response = img_switch_mode(9)
     navigation_result = navigation(9, "")
 
@@ -62,7 +63,7 @@ if __name__ == "__main__":
 
         response = img_switch_mode(target)
         rospy.sleep(0.5)
-        trimer_response = trimer(1, "")
+        trimer_response = trimer(TrimerworkRequest.Grasp, "")
 
         try:
             rospy.sleep(0.5)
@@ -83,9 +84,9 @@ if __name__ == "__main__":
             if np.linalg.norm(pos_1 - pos_2) > 0.05:
                 rospy.logwarn("Catch Falied")
                 rospy.sleep(3.0)
-                trimer_response = trimer(1, "")
+                trimer_response = trimer(TrimerworkRequest.Grasp, "")
                 while trimer_response.res == False:
-                    trimer_response = trimer(1, "")
+                    trimer_response = trimer(TrimerworkRequest.Grasp, "")
                 rospy.loginfo("Another Catch completed")
             else:
                 rospy.loginfo("Catch success")
@@ -97,7 +98,7 @@ if __name__ == "__main__":
 
         response = img_switch_mode(6 + i)
         rospy.sleep(0.5)
-        trimer_response = trimer(2, "")
+        trimer_response = trimer(TrimerworkRequest.Place, "")
         response = img_switch_mode(0)
 
     navigation_result = navigation(11, "")
