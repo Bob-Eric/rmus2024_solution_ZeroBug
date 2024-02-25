@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen"></node>
+</launch>
