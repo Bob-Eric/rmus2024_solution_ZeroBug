@@ -1,4 +1,5 @@
 uint8 mode
+uint8 cube_id
 string call
 ---
 bool res

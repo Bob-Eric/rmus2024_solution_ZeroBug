@@ -12,14 +12,14 @@ from tf_conversions import transformations
 from enum import IntEnum
 
 
-class MissionResquest(IntEnum):
+class PointName(IntEnum):
     Home = 0
-    MiningArea_1_Vp_1 = 1
-    MiningArea_1_Vp_2 = 2
-    MiningArea_2_Vp_1 = 3
-    MiningArea_2_Vp_2 = 4
-    MiningArea_3_Vp_1 = 5
-    MiningArea_3_Vp_2 = 6
+    MiningArea_0_Vp_1 = 1
+    MiningArea_0_Vp_2 = 2
+    MiningArea_1_Vp_1 = 3
+    MiningArea_1_Vp_2 = 4
+    MiningArea_2_Vp_1 = 5
+    MiningArea_2_Vp_2 = 6
     Station_1 = 7
     Station_2 = 8
     Station_3 = 9
@@ -36,24 +36,25 @@ class router:
     发布move_base目标
     """
 
+    Points = {
+        PointName.Home: (0.00, 0.00, 0.00),
+        PointName.MiningArea_0_Vp_1: (0.5, 0.5, 3 * pi / 4),
+        PointName.MiningArea_0_Vp_2: (0.5, 1.5, -3 * pi / 4),
+        PointName.MiningArea_1_Vp_1: (0.1, 2.8, pi / 4),
+        PointName.MiningArea_1_Vp_2: (1.3, 3.0, 3 * pi / 4),
+        PointName.MiningArea_2_Vp_1: (2.0, 0.4, -pi / 4),
+        PointName.MiningArea_2_Vp_2: (2, -0.5, pi / 4),
+        PointName.Station_1: (1.18, 1.91, 0.00),
+        PointName.Station_2: (1.18, 1.80, 0.00),
+        PointName.Station_3: (1.18, 1.65, 0.00),
+        PointName.Noticeboard: (0.2, 0.2, pi / 4),
+        PointName.Park: (3.16, -0.795, 0.00),
+    }
+
     def __init__(self) -> None:
         self.M_reach_goal = False
 
         # 所有观察点的索引、名称、位置(posi_x,pose_y,yaw)
-        self.mission_point = {
-            MissionResquest.Home: (0.00, 0.00, 0.00),
-            MissionResquest.MiningArea_1_Vp_1: (0.5, 0.5, 3 * pi / 4),
-            MissionResquest.MiningArea_1_Vp_2: (0.5, 1.5, -3 * pi / 4),
-            MissionResquest.MiningArea_2_Vp_1: (0.1, 2.8, pi / 4),
-            MissionResquest.MiningArea_2_Vp_2: (1.3, 3.0, 3 * pi / 4),
-            MissionResquest.MiningArea_3_Vp_1: (2.0, 0.4, -pi / 4),
-            MissionResquest.MiningArea_3_Vp_2: (2, -0.5, pi / 4),
-            MissionResquest.Station_1: (1.18, 1.91, 0.00),
-            MissionResquest.Station_2: (1.18, 1.80, 0.00),
-            MissionResquest.Station_3: (1.18, 1.65, 0.00),
-            MissionResquest.Noticeboard: (0.00, 0.00, pi / 4),
-            MissionResquest.Park: (3.16, -0.795, 0.00),
-        }
 
         self.tfBuffer = tf2_ros.Buffer()
         self.tfListener = tf2_ros.TransformListener(self.tfBuffer)
@@ -83,7 +84,7 @@ class router:
         self.service = rospy.Service(
             "/set_navigation_goal", setgoal, self.setgoalCallback
         )
-        self.mission = MissionResquest.End
+        self.mission = PointName.End
 
     def MoveBaseResultCallback(self, msg: MoveBaseActionResult):
         if msg.status.status == 3:
@@ -94,11 +95,11 @@ class router:
         simple_goal.header.stamp = rospy.Time.now()
 
         simple_goal.header.frame_id = "map"
-        simple_goal.pose.position.x = self.mission_point[self.mission][0]
-        simple_goal.pose.position.y = self.mission_point[self.mission][1]
+        simple_goal.pose.position.x = self.Points[self.mission][0]
+        simple_goal.pose.position.y = self.Points[self.mission][1]
         simple_goal.pose.position.z = 0.0
         quat = transformations.quaternion_from_euler(
-            0.0, 0.0, self.mission_point[self.mission][2]
+            0.0, 0.0, self.Points[self.mission][2]
         )
         simple_goal.pose.orientation.x = quat[0]
         simple_goal.pose.orientation.y = quat[1]
@@ -111,20 +112,18 @@ class router:
         rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
         rospy.loginfo("req: call = {} point = {}".format(req.call, req.point))
 
-        if 0 <= req.point < MissionResquest.End:
-            self.mission = MissionResquest(req.point)
+        if 0 <= req.point < PointName.End:
+            self.mission = PointName(req.point)
             self.pubMovebaseMissionGoal()
             self.M_reach_goal = False
 
             r = rospy.Rate(10)
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
-                    rospy.loginfo(
-                        "Reach Goal {}!".format(self.mission_point[self.mission][0])
-                    )
+                    rospy.loginfo("Reach Goal {}!".format(self.Points[self.mission][0]))
                     resp.res = True
                     resp.response = "Accomplish!"
-                    self.mission = MissionResquest.End
+                    self.mission = PointName.End
                     break
 
                 r.sleep()
