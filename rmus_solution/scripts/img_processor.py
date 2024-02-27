@@ -18,6 +18,22 @@ from scipy.spatial.transform import Rotation as R
 from detect import marker_detection
 
 
+class ModeRequese(IntEnum):
+    DoNothing = 0
+    One = 1
+    Two = 2
+    Three = 3
+    Four = 4
+    Five = 5
+    Six = 6
+    B = 7
+    O = 8
+    X = 9
+    GameInfo = 10
+
+    End = 11
+
+
 def pose_aruco_2_ros(rvec, tvec):
     aruco_pose_msg = Pose()
     aruco_pose_msg.position.x = tvec[0]
@@ -33,7 +49,7 @@ def pose_aruco_2_ros(rvec, tvec):
 
 
 class Processor:
-    def __init__(self, initial_mode=0, verbose=True) -> None:
+    def __init__(self, initial_mode=ModeRequese.DoNothing, verbose=True) -> None:
         self.current_mode = initial_mode
         self.collapsed = False
         self.verbose = verbose
@@ -43,7 +59,7 @@ class Processor:
 
         self.tfBuffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
-        
+
         while not rospy.is_shutdown():
             try:
                 rospy.wait_for_message("/camera/color/image_raw", Image, timeout=5.0)
@@ -66,14 +82,14 @@ class Processor:
                 rospy.logwarn("Waiting for message /camera/color/camera_info.")
                 continue
 
-        # try:
-        #     if self.verbose:
-        #         self.vis_thread = Thread(target=self.visualization)
-        #         self.vis_thread.start()
-        # except:
-        #     while True:
-        #         self.collapsed = False
-        #         rospy.logerr("The visualization window has collapsed!")
+        try:
+            if self.verbose:
+                self.vis_thread = Thread(target=self.visualization)
+                self.vis_thread.start()
+        except:
+            while True:
+                self.collapsed = False
+                rospy.logerr("The visualization window has collapsed!")
         rospy.Subscriber(
             "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
         )
@@ -96,7 +112,7 @@ class Processor:
         )
         locked_current_mode = self.current_mode
         # detect 3 wanted blocks
-        if locked_current_mode == 10:
+        if locked_current_mode == ModeRequese.GameInfo:
             detected_gameinfo = self.get_gameinfo(self.image)
             if detected_gameinfo is not None:
                 if self.detected_gameinfo is None:
@@ -104,21 +120,23 @@ class Processor:
                 assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
                 self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         # detect block 1-6 and B, O, X
-        elif locked_current_mode <= 9 and locked_current_mode >= 1:
+        elif ModeRequese.One <= locked_current_mode <= ModeRequese.X:
             self.update_blocks_info(self.image)
             if self.blocks_info[locked_current_mode - 1] is not None:
                 self.pub_b.publish(self.blocks_info[locked_current_mode - 1][0])
         else:
             ## for debug:
-            quads_id, quads, area_list, tvec_list, rvec_list = marker_detection(self.image, self.camera_matrix, self.verbose)
+            quads_id, quads, area_list, tvec_list, rvec_list = marker_detection(
+                self.image, self.camera_matrix, self.verbose
+            )
         self.current_visualization_image = self.image
 
     def depthCallback(self, image):
         self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
 
     def modeCallBack(self, req):
-        if 0 <= req.mode <= 9:
-            self.current_mode = SwitchResponse( req.mode)
+        if ModeRequese.DoNothing <= ModeRequese(req.mode) < ModeRequese.End:
+            self.current_mode = ModeRequese(req.mode)
             return switchResponse(self.current_mode)
         else:
             return switchResponse(req.mode)
@@ -156,7 +174,9 @@ class Processor:
         gpose_list = []
         coord_cam = "camera_aligned_depth_to_color_frame_correct"
         coord_glb = "map"
-        trans = self.tfBuffer.lookup_transform(coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2))
+        trans = self.tfBuffer.lookup_transform(
+            coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
+        )
         # gpose_list.append(tf2_geometry_msgs.do_transform_pose(pose, trans))
         for pose in pose_list:
             ## define pose stamped in camera_link
@@ -173,11 +193,7 @@ class Processor:
             if id in id_list:
                 ## block `id` is detected in image
                 idx = id_list.index(id)
-                block_info = [
-                    pose_list[idx],
-                    gpose_list[idx],
-                    self.this_image_time_ms
-                ]
+                block_info = [pose_list[idx], gpose_list[idx], self.this_image_time_ms]
                 self.blocks_info[i] = block_info
             # elif self.blocks_info[i] is not None:
             #     ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
@@ -238,6 +254,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=2, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.DoNothing, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
