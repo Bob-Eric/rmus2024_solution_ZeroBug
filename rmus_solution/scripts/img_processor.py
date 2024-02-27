@@ -177,6 +177,9 @@ class Processor:
         trans = self.tfBuffer.lookup_transform(
             coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
         )
+        inv_trans = self.tfBuffer.lookup_transform(
+            coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
+        )
         # gpose_list.append(tf2_geometry_msgs.do_transform_pose(pose, trans))
         for pose in pose_list:
             ## define pose stamped in camera_link
@@ -195,16 +198,20 @@ class Processor:
                 idx = id_list.index(id)
                 block_info = [pose_list[idx], gpose_list[idx], self.this_image_time_ms]
                 self.blocks_info[i] = block_info
-            # elif self.blocks_info[i] is not None:
-            #     ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
-            #     ## Assumption: block's not moving
-            #     ## TODO: test if it's working when lose target temporarily
-            #     gpose = self.blocks_info[i][1]
-            #     pose = tf2_geometry_msgs.do_transform_pose(gpose, inv_trans)
-            #     data_makeup = [pose, gpose, self.this_image_time_ms]
-            # else:
-            #     ## uint32data[i] == None, which means it's not updated ever
-            #     pass
+            elif self.blocks_info[i] is not None:
+                ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
+                ## Assumption: block's not moving
+                ## TODO: test if it's working when lose target temporarily
+                gpose = self.blocks_info[i][1]
+                gpose_stamp = tf2_geometry_msgs.PoseStamped()
+                gpose_stamp.header.stamp = rospy.Time.now()
+                gpose_stamp.header.frame_id = coord_glb
+                gpose_stamp.pose = gpose
+                pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
+                block_info_makeup = [pose, gpose, self.this_image_time_ms]
+                self.blocks_info[i] = block_info_makeup
+                ## if not working, just set it to None
+                # this.blocks_info[i] = None
         return
 
     def get_current_depth(self, quads):
