@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from threading import Thread
 from scipy.spatial.transform import Rotation as R
-
+from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
 
 
@@ -62,11 +62,11 @@ class Processor:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_message("/camera/color/image_raw", Image, timeout=5.0)
-                rospy.loginfo("Get topic /camera/color/image_raw.")
+                rospy.wait_for_message("/rtabmap/rgbd_image", RGBDImage, timeout=5.0)
+                rospy.loginfo("Get topic /rtabmap/rgbd_image.")
                 break
             except:
-                rospy.logwarn("Waiting for message /camera/color/image_raw.")
+                rospy.logwarn("Waiting for message /rtabmap/rgbd_image.")
                 continue
 
         while not rospy.is_shutdown():
@@ -91,22 +91,17 @@ class Processor:
                 self.collapsed = False
                 rospy.logerr("The visualization window has collapsed!")
         rospy.Subscriber(
-            "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
-        )
-        rospy.Subscriber(
-            "/camera/aligned_depth_to_color/image_raw",
-            Image,
-            self.depthCallback,
-            queue_size=1,
+            "/rtabmap/rgbd_image", RGBDImage, self.imageCallback, queue_size=1
         )
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
-        self.pub_b = rospy.Publisher("/get_blockinfo", Pose, queue_size=1)
+        self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfo, queue_size=1)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
-    def imageCallback(self, image):
-        self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
+    def imageCallback(self, image: RGBDImage):
+        self.image = self.bridge.imgmsg_to_cv2(image.rgb, "bgr8")
+        self.depth_img = self.bridge.imgmsg_to_cv2(image.depth, "32FC1")
         self.this_image_time_ms = int(image.header.stamp.nsecs / 1e6) + int(
             1000 * (image.header.stamp.secs - self.start_time)
         )
@@ -123,16 +118,16 @@ class Processor:
         elif ModeRequese.One <= locked_current_mode <= ModeRequese.X:
             self.update_blocks_info(self.image)
             if self.blocks_info[locked_current_mode - 1] is not None:
-                self.pub_b.publish(self.blocks_info[locked_current_mode - 1][0])
+                marker_info = MarkerInfo()
+                marker_info.id = locked_current_mode
+                marker_info.pose = self.blocks_info[locked_current_mode - 1][0]
+                self.pub_b.publish(marker_info)
         else:
             ## for debug:
             quads_id, quads, area_list, tvec_list, rvec_list = marker_detection(
                 self.image, self.camera_matrix, self.verbose
             )
         self.current_visualization_image = self.image
-
-    def depthCallback(self, image):
-        self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
 
     def modeCallBack(self, req):
         if ModeRequese.DoNothing <= ModeRequese(req.mode) < ModeRequese.End:

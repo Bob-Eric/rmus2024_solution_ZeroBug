@@ -14,6 +14,7 @@ from simple_pid import PID
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulater_PIDConfig
 from enum import IntEnum
+from rmus_solution.msg import MarkerInfo
 
 
 class TrimerworkRequest(IntEnum):
@@ -29,7 +30,7 @@ class manipulater:
         self.arm_gripper_pub = rospy.Publisher("arm_gripper", Point, queue_size=2)
         self.arm_position_pub = rospy.Publisher("arm_position", Pose, queue_size=2)
         self.cmd_vel_puber = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
-        rospy.Subscriber("/get_blockinfo", Pose, self.markerPoseCb, queue_size=1)
+        rospy.Subscriber("/get_blockinfo", MarkerInfo, self.markerPoseCb, queue_size=1)
 
         rospy.Subscriber(
             "/get_marker_info", MarkerInfoList, self.markerPoseLock, queue_size=1
@@ -101,8 +102,8 @@ class manipulater:
                 self.current_marker_poses = markerInfo.pose
                 self.image_time_now = rospy.get_time()
 
-    def markerPoseCb(self, msg: Pose):
-        self.current_marker_poses = msg
+    def markerPoseCb(self, msg: MarkerInfo):
+        self.current_marker_poses = msg.pose
         self.image_time_now = rospy.get_time()
 
     def getTargetPosAndAngleInBaseLinkFrame(self, pose_in_cam: Pose):
@@ -198,14 +199,14 @@ class manipulater:
                 target_marker_pose
             )
 
-            if np.linalg.norm(target_pos - self.target_pos_old) < 0.001:
-                if not_update_cnt > 60:
-                    rospy.loginfo("target_pos is not updated")
-                    resp.res = False
-                    return resp
-                not_update_cnt += 1
-            else:
-                not_update_cnt = 0
+            # if np.linalg.norm(target_pos - self.target_pos_old) < 0.001:
+            #     if not_update_cnt > 60:
+            #         rospy.loginfo("target_pos is not updated")
+            #         resp.res = False
+            #         return resp
+            #     not_update_cnt += 1
+            # else:
+            #     not_update_cnt = 0
             self.target_pos_old = target_pos
 
             if self.is_near_desired_position(target_pos):
