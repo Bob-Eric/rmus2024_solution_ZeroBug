@@ -59,7 +59,7 @@ def classify(image, is_white_digit=True):
     idx = torch.argmax(logits, dim=1).item()
     return idx, logits
 
-def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0)):
+def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_thresh=225):
     """ 
     Detect warped squares (block surfaces) in grayImg
     `camera_matrix`: used to solve pnp
@@ -67,6 +67,10 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0)):
         much lower when not stacked) and gameinfo board (much higher than blocks)
         note that y axis in camera frame is downward. 
         e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
+    `area_thresh`: threshold to filter out small contours, like noise and quads far away
+        set it to 50 => can detect quads 2m away but sometimes may confuse with "6" and "B"
+        set it to 225 => can only detect quads 1.5m away but detected quads are bigger and more clear,
+        for which classifier works better (nearly 100% acc).
     """
     quads = []
     quads_f = []
@@ -75,7 +79,7 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0)):
         grayImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     
-    contours = [c for c in contours if cv2.contourArea(c) > 50]
+    contours = [c for c in contours if cv2.contourArea(c) > area_thresh]
 
     if len(contours) > 0:
         contours = sorted(contours, key=cv2.contourArea, reverse=False)

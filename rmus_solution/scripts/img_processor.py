@@ -101,7 +101,7 @@ class Processor:
         )
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
-        self.pub_b = rospy.Publisher("/get_blockinfo", Pose, queue_size=1)
+        self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
@@ -111,7 +111,12 @@ class Processor:
             1000 * (image.header.stamp.secs - self.start_time)
         )
         locked_current_mode = self.current_mode
-        # detect 3 wanted blocks
+
+        ## update blocks_info (block 1-6 and B, O, X) and publish it
+        self.update_blocks_info(self.image)
+        self.publish_blocks_info()
+
+        # detect 3 wanted blocks from gameinfo board
         if locked_current_mode == ModeRequese.GameInfo:
             detected_gameinfo = self.get_gameinfo(self.image)
             if detected_gameinfo is not None:
@@ -119,17 +124,8 @@ class Processor:
                     self.detected_gameinfo = detected_gameinfo
                 assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
                 self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
-        # detect block 1-6 and B, O, X
-        elif ModeRequese.One <= locked_current_mode <= ModeRequese.X:
-            self.update_blocks_info(self.image)
-            if self.blocks_info[locked_current_mode - 1] is not None:
-                self.pub_b.publish(self.blocks_info[locked_current_mode - 1][0])
-        else:
-            ## for debug:
-            quads_id, quads, area_list, tvec_list, rvec_list = marker_detection(
-                self.image, self.camera_matrix, self.verbose
-            )
         self.current_visualization_image = self.image
+        return 
 
     def depthCallback(self, image):
         self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
@@ -212,6 +208,18 @@ class Processor:
                 ## if not working, just set it to None
                 # this.blocks_info[i] = None
         return
+
+    def publish_blocks_info(self):
+        marker_list = MarkerInfoList()
+        for i in range(len(self.blocks_info)):
+            if self.blocks_info[i] is None:
+                continue
+            marker = MarkerInfo()
+            marker.id = i + 1
+            marker.pose = self.blocks_info[i][0]
+            marker.gpose = self.blocks_info[i][1]
+            marker_list.markerInfoList.append(marker)
+        self.pub_b.publish(marker_list)
 
     ## not used yet, but may be useful when sim2real due to noise
     def get_current_depth(self, quads):
