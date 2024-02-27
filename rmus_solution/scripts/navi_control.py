@@ -14,16 +14,19 @@ from enum import IntEnum
 
 class MissionResquest(IntEnum):
     Home = 0
-    MiningArea_1 = 1
-    MiningArea_2 = 2
-    MiningArea_3 = 3
-    Station_1 = 4
-    Station_2 = 5
-    Station_3 = 6
-    Noticeboard = 7
-    Park = 8
+    MiningArea_1_Vp_1 = 1
+    MiningArea_1_Vp_2 = 2
+    MiningArea_2_Vp_1 = 3
+    MiningArea_2_Vp_2 = 4
+    MiningArea_3_Vp_1 = 5
+    MiningArea_3_Vp_2 = 6
+    Station_1 = 7
+    Station_2 = 8
+    Station_3 = 9
+    Noticeboard = 10
+    Park = 11
 
-    End = 9
+    End = 12
 
 
 class router:
@@ -39,9 +42,12 @@ class router:
         # 所有观察点的索引、名称、位置(posi_x,pose_y,yaw)
         self.mission_point = {
             MissionResquest.Home: (0.00, 0.00, 0.00),
-            MissionResquest.MiningArea_1: (0.5, 0.5, 3 * pi / 4),
-            MissionResquest.MiningArea_2: (1.3, 3.0, 3 * pi / 4),
-            MissionResquest.MiningArea_3: (1.96, 0.00768, 0.00),
+            MissionResquest.MiningArea_1_Vp_1: (0.5, 0.5, 3 * pi / 4),
+            MissionResquest.MiningArea_1_Vp_2: (0.5, 1.5, -3 * pi / 4),
+            MissionResquest.MiningArea_2_Vp_1: (0.1, 2.8, pi / 4),
+            MissionResquest.MiningArea_2_Vp_2: (1.3, 3.0, 3 * pi / 4),
+            MissionResquest.MiningArea_3_Vp_1: (2.0, 0.4, -pi / 4),
+            MissionResquest.MiningArea_3_Vp_2: (2, -0.5, pi / 4),
             MissionResquest.Station_1: (1.18, 1.91, 0.00),
             MissionResquest.Station_2: (1.18, 1.80, 0.00),
             MissionResquest.Station_3: (1.18, 1.65, 0.00),

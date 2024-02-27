@@ -34,7 +34,8 @@ class gamecore:
             except:
                 rospy.logwarn("Waiting for gameinfo message.")
             rospy.sleep(0.5)
-        self.test_navigation()
+        # self.test_navigation()
+        self.observation()
 
     def wait_for_services(self):
         while not rospy.is_shutdown():
@@ -61,11 +62,20 @@ class gamecore:
                 rospy.logwarn("Waiting for image_processor_switch_mode Service")
                 rospy.sleep(0.5)
 
+    def observation(self):
+        self.response = self.img_switch_mode(ModeRequese.One)
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_1_Vp_1, "")
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_1_Vp_2, "")
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_2_Vp_1, "")
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_2_Vp_2, "")
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_3_Vp_1, "")
+        self.navigation_result = self.navigation(MissionResquest.MiningArea_3_Vp_2, "")
+
     def test_navigation(self):
         self.response = self.img_switch_mode(ModeRequese.DoNothing)
         for i in range(0, 3):
             self.navigation_result = self.navigation(
-                MissionResquest.MiningArea_1 + i, ""
+                MissionResquest.MiningArea_1_Vp_1 + i, ""
             )
             for j, target in enumerate(self.gameinfo.data):
                 if j < i:
