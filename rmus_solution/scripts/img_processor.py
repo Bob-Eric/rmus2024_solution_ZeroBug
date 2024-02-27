@@ -180,7 +180,6 @@ class Processor:
         inv_trans = self.tfBuffer.lookup_transform(
             coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
         )
-        # gpose_list.append(tf2_geometry_msgs.do_transform_pose(pose, trans))
         for pose in pose_list:
             ## define pose stamped in camera_link
             pose_stamp = tf2_geometry_msgs.PoseStamped()
@@ -214,6 +213,7 @@ class Processor:
                 # this.blocks_info[i] = None
         return
 
+    ## not used yet, but may be useful when sim2real due to noise
     def get_current_depth(self, quads):
         locked_depth = self.depth_img
         new_contour = quads.copy()
@@ -252,7 +252,7 @@ class Processor:
         while not rospy.is_shutdown():
             try:
                 if self.current_visualization_image is not None:
-                    cv2.imshow("frame", self.current_visualization_image)
+                    cv2.imshow("visualization", self.current_visualization_image)
                     cv2.waitKey(33)
             except:
                 self.collapsed = False
@@ -261,6 +261,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.DoNothing, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()

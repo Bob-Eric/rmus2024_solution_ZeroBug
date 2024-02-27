@@ -8,65 +8,6 @@ import rospy
 import numpy as np
 
 
-def sort_quad_points(quad):
-    """ sort points of quad to a certain order () """
-    if not len(quad) == 4:
-        assert False
-    new_cnt = quad.copy()
-
-    cx = (quad[0, 0, 0] + quad[1, 0, 0] + quad[2, 0, 0] + quad[3, 0, 0]) / 4.0
-    cy = (quad[0, 0, 1] + quad[1, 0, 1] + quad[2, 0, 1] + quad[3, 0, 1]) / 4.0
-
-    x_left_n = 0
-    for i in range(4):
-        if quad[i, 0, 0] < cx:
-            x_left_n += 1
-    if x_left_n != 2:
-        return None
-    lefts = np.array([c for c in quad if c[0, 0] < cx])
-    rights = np.array([c for c in quad if c[0, 0] >= cx])
-    if lefts[0, 0, 1] < lefts[1, 0, 1]:
-        new_cnt[0, 0, 0] = lefts[0, 0, 0]
-        new_cnt[0, 0, 1] = lefts[0, 0, 1]
-        new_cnt[3, 0, 0] = lefts[1, 0, 0]
-        new_cnt[3, 0, 1] = lefts[1, 0, 1]
-    else:
-        new_cnt[0, 0, 0] = lefts[1, 0, 0]
-        new_cnt[0, 0, 1] = lefts[1, 0, 1]
-        new_cnt[3, 0, 0] = lefts[0, 0, 0]
-        new_cnt[3, 0, 1] = lefts[0, 0, 1]
-
-    if rights[0, 0, 1] < rights[1, 0, 1]:
-        new_cnt[1, 0, 0] = rights[0, 0, 0]
-        new_cnt[1, 0, 1] = rights[0, 0, 1]
-        new_cnt[2, 0, 0] = rights[1, 0, 0]
-        new_cnt[2, 0, 1] = rights[1, 0, 1]
-    else:
-        new_cnt[1, 0, 0] = rights[1, 0, 0]
-        new_cnt[1, 0, 1] = rights[1, 0, 1]
-        new_cnt[2, 0, 0] = rights[0, 0, 0]
-        new_cnt[2, 0, 1] = rights[0, 0, 1]
-    return new_cnt
-
-
-""" Be careful while modifying HSV filter range, you may 
-    need to save warped images to the training set again """
-def preprocessing_exchange(frame):
-    hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    boolImg = (
-        np.logical_and(
-            np.logical_and(
-                np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 150),
-                hsvImg[:, :, 1] >= 130,
-            ),
-            hsvImg[:, :, 2] >= 70,
-        )
-        * 255
-    ).astype(np.uint8)
-    # boolImg = (np.logical_and(np.logical_and(np.logical_or(hsvImg[:,:,0] <= 10, hsvImg[:,:,0] >= 150), hsvImg[:,:,1] >= 100), hsvImg[:,:,2] >= 100) * 255).astype(np.uint8)
-    return boolImg, hsvImg
-
-
 def preprocessing(frame):
     """ 
     Processing the image to get the binary image with HSV red filter
@@ -210,7 +151,7 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0)):
             continue
         """ chech if block_height is within given height_range """
         quad_height = tvec[1]
-        # print(f"quad height: {quad_height}, quad: {quad}")
+        # print(f"quad: {quad}")
         if quad_height < height_range[0] or quad_height > height_range[1]:
             continue
         quads_prj.append(np.round(projectedPoints).astype(int))
@@ -265,14 +206,8 @@ def marker_detection(
         quads_id, quads, area_list, tvec_list, rvec_list
     """
     if exchange_station:
-        tframe = copy.deepcopy(frame)
-        tframe[int(tframe.shape[0] * 0.32):, :, :] = 0
         height_range = (-10, -0.2)
-        boolImg, _ = preprocessing(tframe)
-        # cv2.imshow("exchange_station tframe", tframe)
-        # cv2.waitKey(0)
-    else:
-        boolImg, _ = preprocessing(frame)
+    boolImg, _ = preprocessing(frame)
     
     quads, tvec_list, rvec_list, area_list, _ = square_detection(boolImg, camera_matrix, height_range=height_range)
     quads_id, warpped_img_list = classification_cnn(boolImg, quads)
