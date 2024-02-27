@@ -185,9 +185,13 @@ class Processor:
                 ## Assumption: block's not moving
                 ## TODO: test if it's working when lose target temporarily
                 gpose = self.blocks_info[i][1]
-                pose = tf2_geometry_msgs.do_transform_pose(gpose, inv_trans)
-                data_makeup = [pose, gpose, self.this_image_time_ms]
-                this.blocks_info[i] = data_makeup
+                gpose_stamp = tf2_geometry_msgs.PoseStamped()
+                gpose_stamp.header.stamp = rospy.Time.now()
+                gpose_stamp.header.frame_id = coord_glb
+                gpose_stamp.pose = gpose
+                pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
+                block_info_makeup = [pose, gpose, self.this_image_time_ms]
+                self.blocks_info[i] = block_info_makeup
                 ## if not working, just set it to None
                 # this.blocks_info[i] = None
         return
