@@ -7,57 +7,24 @@ import copy
 import rospy
 import numpy as np
 
-templates = []
 
-
-def map_img77(img):
-    segment = [
-        6,
-        14,
-        22,
-        30,
-        37,
-        44,
-    ]
-    ass = np.split(img, segment, axis=0)
-    all_subs = np.array(
-        [
-            [np.sum(k) / k.size / 255.0 for k in np.split(a, segment, axis=1)]
-            for a in ass
-        ],
-        dtype=np.float,
-    )
-    return (all_subs > 0.5).astype(np.uint8) * 255
-
-
-def load_template():
-    global templates
-    tpl_path = os.path.join(os.path.dirname(__file__), "template/")
-    rospy.loginfo(tpl_path)
-    for i in range(1, 9):
-        tpl = cv2.imread(tpl_path + str(i) + ".png", 0)
-        rospy.loginfo(tpl_path + str(i) + ".png")
-        rospy.loginfo(tpl.shape)
-        templates.append(map_img77(tpl))
-
-
-def sort_contour(cnt):
-
-    if not len(cnt) == 4:
+def sort_quad_points(quad):
+    """ sort points of quad to a certain order () """
+    if not len(quad) == 4:
         assert False
-    new_cnt = cnt.copy()
+    new_cnt = quad.copy()
 
-    cx = (cnt[0, 0, 0] + cnt[1, 0, 0] + cnt[2, 0, 0] + cnt[3, 0, 0]) / 4.0
-    cy = (cnt[0, 0, 1] + cnt[1, 0, 1] + cnt[2, 0, 1] + cnt[3, 0, 1]) / 4.0
+    cx = (quad[0, 0, 0] + quad[1, 0, 0] + quad[2, 0, 0] + quad[3, 0, 0]) / 4.0
+    cy = (quad[0, 0, 1] + quad[1, 0, 1] + quad[2, 0, 1] + quad[3, 0, 1]) / 4.0
 
     x_left_n = 0
     for i in range(4):
-        if cnt[i, 0, 0] < cx:
+        if quad[i, 0, 0] < cx:
             x_left_n += 1
     if x_left_n != 2:
         return None
-    lefts = np.array([c for c in cnt if c[0, 0] < cx])
-    rights = np.array([c for c in cnt if c[0, 0] >= cx])
+    lefts = np.array([c for c in quad if c[0, 0] < cx])
+    rights = np.array([c for c in quad if c[0, 0] >= cx])
     if lefts[0, 0, 1] < lefts[1, 0, 1]:
         new_cnt[0, 0, 0] = lefts[0, 0, 0]
         new_cnt[0, 0, 1] = lefts[0, 0, 1]
@@ -147,24 +114,31 @@ def classify(image, is_white_digit=True):
 
     image = cv2.resize(image, (50, 50))
     x = torch.tensor(image).float().unsqueeze(0).unsqueeze(0)
-    logits = model(x)
+    logits = model(x).detach()
     idx = torch.argmax(logits, dim=1).item()
     return idx, logits
 
-def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(-10000.0, 200000.0)):
-    projection_points = True
+def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0)):
+    """ 
+    Detect warped squares (block surfaces) in grayImg
+    `camera_matrix`: used to solve pnp
+    `height_range`: used to distinguish between block1-6 (no higher than +0.2m, 
+        much lower when not stacked) and gameinfo board (much higher than blocks)
+        note that y axis in camera frame is downward. 
+        e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
+    """
     quads = []
     quads_f = []
 
-    contours, hierarchy = cv2.findContours(
+    contours, _ = cv2.findContours(
         grayImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     
+    contours = [c for c in contours if cv2.contourArea(c) > 50]
+
     if len(contours) > 0:
         contours = sorted(contours, key=cv2.contourArea, reverse=False)
         for i, contour in enumerate(contours):
-            if cv2.contourArea(contour) < 100:
-                continue
             x, y, w, h = cv2.boundingRect(contour)
             if h/w > 2 or w/h > 2:
                 continue
@@ -179,7 +153,7 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
 
             ########## for debug ##########
             # testImg = cv2.cvtColor(grayImg, cv2.COLOR_GRAY2BGR)
-            # frame = cv2.drawContours(testImg, [approx], -1, (0, 255, 0), 1)
+            # frame = cv2.drawContours(testImg, [contour], -1, (0, 255, 0), 1)
             # cv2.imshow("frame", frame)
             # cv2.waitKey(0)
             # # warp the image
@@ -199,62 +173,56 @@ def square_detection(grayImg, camera_matrix, area_filter_size=30, height_range=(
             # print(f"Time cost: {time.time() - t_sta}")
             ########## debug end ##########
 
+    rvec_list = []
+    tvec_list = []
+    quads_prj = []
+    area_list = []
 
-    if projection_points:
-        rvec_list = []
-        tvec_list = []
-        quads_prj = []
-        area_list = []
+    block_size = 0.05
+    model_object = np.array(
+        [
+            (0 - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
+            (block_size - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
+            (block_size - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
+            (0 - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
+        ]
+    )
 
-        block_size = 0.05
-        model_object = np.array(
-            [
-                (0 - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
-                (block_size - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
-                (block_size - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
-                (0 - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
-            ]
+    distort_coeffs = np.array([[0, 0, 0, 0]], dtype=np.float32)
+    for quad in quads_f:
+        model_image = np.squeeze(quad)
+        """ calculate the pose of the corner points by pnp solving """
+        ret, rvec, tvec = cv2.solvePnP(
+            model_object, model_image, camera_matrix, distort_coeffs
+        )
+        """ reconstruct corner points in image plane """
+        projectedPoints, _ = cv2.projectPoints(
+            model_object, rvec, tvec, camera_matrix, distort_coeffs
         )
 
-        dist_coeffs = np.array([[0, 0, 0, 0]], dtype="double")
-        for quad in quads_f:
-            model_image = np.squeeze(quad)
-            ret, rvec, tvec = cv2.solvePnP(
-                model_object, model_image, camera_matrix, dist_coeffs
-            )
-            projectedPoints, _ = cv2.projectPoints(
-                model_object, rvec, tvec, camera_matrix, dist_coeffs
-            )
-
-            err = 0
-            for t in range(len(projectedPoints)):
-                err += np.linalg.norm(projectedPoints[t] - model_image[t])
-
-            area = cv2.contourArea(quad.astype(np.int32))
-            if (
-                err / area < 0.005
-                and tvec[1] > height_range[0]
-                and tvec[1] < height_range[1]
-            ):
-                quads_prj.append(projectedPoints.astype(int))
-                rvec_list.append(rvec)
-                tvec_list.append(tvec)
-                area_list.append(area)
-        return quads_prj, tvec_list, rvec_list, area_list, quads
-    else:
-        return (
-            quads,
-            [[0, 0, 0] for _ in quads],
-            [[0, 0, 0] for _ in quads],
-            [cv2.contourArea(quad.astype(np.int32)) for quad in quads],
-            quads,
-        )
+        err = 0
+        """ compute the reconstruction error """
+        for t in range(len(projectedPoints)):
+            err += np.linalg.norm(projectedPoints[t] - model_image[t])
+        area = cv2.contourArea(quad.astype(np.int32))
+        """ check if reconstruction error is small enough """
+        if err / area > 0.005:
+            continue
+        """ chech if block_height is within given height_range """
+        quad_height = tvec[1]
+        # print(f"quad height: {quad_height}, quad: {quad}")
+        if quad_height < height_range[0] or quad_height > height_range[1]:
+            continue
+        quads_prj.append(np.round(projectedPoints).astype(int))
+        rvec_list.append(rvec)
+        tvec_list.append(tvec)
+        area_list.append(area)
+    return quads_prj, tvec_list, rvec_list, area_list, quads
 
 
 def classification_cnn(grayImg, quads):
     """ use cnn to classify the digit, works better than template matching """
     quads_ID = []
-    minpoints_list = []
     warped_img_list = []
 
     for i in range(len(quads)):
@@ -267,128 +235,55 @@ def classification_cnn(grayImg, quads):
         warped_img_list.append(warped)
         idx, logits = classify(warped, is_white_digit=False)
         prob_miss = 1 - torch.softmax(logits, dim=1)[:, idx]
-        quads_ID.append(idx + 1)
-        minpoints_list.append(prob_miss.item())
+        quad_ID = idx + 1
+        quads_ID.append(quad_ID)
         ########## for debug ##########
         # cv2.imshow(f"warped {i}", warped)
         # cv2.waitKey(0)
         # print(logits)
         ########## bug end ##########
-    return quads_ID, minpoints_list, warped_img_list
-
-
-def classification(frame, quads, template_ids=range(1, 9)):
-    quads_ID = []
-    minpoints_list = []
-    warpped_img_list = []
-    for i in range(len(quads)):
-        points_src = np.array(
-            [
-                [(quads[i][0, 0, 0], quads[i][0, 0, 1])],
-                [(quads[i][1, 0, 0], quads[i][1, 0, 1])],
-                [(quads[i][2, 0, 0], quads[i][2, 0, 1])],
-                [(quads[i][3, 0, 0], quads[i][3, 0, 1])],
-            ],
-            dtype="float32",
-        )
-
-        points_dst = np.array([[0, 0], [49, 0], [49, 49], [0, 49]], dtype="float32")
-        out_img = cv2.warpPerspective(
-            frame, cv2.getPerspectiveTransform(points_src, points_dst), (50, 50)
-        )
-        out_img = cv2.cvtColor(out_img, cv2.COLOR_BGR2GRAY)
-        out_img = cv2.threshold(out_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-        warpped_img_list.append(out_img)
-
-        resize = False
-        if resize:
-            try:
-                out_img[:3, :] = 0
-                out_img[47:, :] = 0
-                out_img[:, :3] = 0
-                out_img[:, 47:] = 0
-                num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-                    out_img
-                )
-                for label_i in range(1, num_labels):
-                    if stats[label_i, cv2.CC_STAT_AREA].astype(float) < 35:  # 原50
-                        out_img[labels == label_i] = 0
-
-                nonzero_img = np.nonzero(out_img)
-                left, right = np.min(nonzero_img[0]), np.max(nonzero_img[0])
-                top, bottom = np.min(nonzero_img[1]), np.max(nonzero_img[1])
-                right, bottom = min(right + 1, 49), min(bottom + 1, 49)
-                nonzero_img = out_img[left:right, top:bottom]
-                nonzero_img = cv2.resize(
-                    nonzero_img, (36, 36), interpolation=cv2.INTER_NEAREST
-                )
-                out_img = np.zeros((50, 50), dtype=np.uint8)
-                out_img[7 : 7 + 36, 7 : 7 + 36] = nonzero_img
-            except:
-                rospy.loginfo("resize trick failed, back to original img as tempate")
-        out_img = map_img77(out_img)
-
-        match_candidate = []
-        match_candidate.append(out_img)
-        match_candidate.append(cv2.rotate(out_img, cv2.ROTATE_180))
-        match_candidate.append(cv2.rotate(out_img, cv2.ROTATE_90_CLOCKWISE))
-        match_candidate.append(cv2.rotate(out_img, cv2.ROTATE_90_COUNTERCLOCKWISE))
-
-        min_diff = 10000
-        min_diff_target = 0
-
-        for tid in template_ids:
-            for tt in range(4):
-                diff_img = cv2.absdiff(templates[tid - 1], match_candidate[tt])
-                sum = np.sum(diff_img) / 255.0 / diff_img.size
-                if min_diff > sum:
-                    min_diff = sum
-                    min_diff_target = tid
-
-        if min_diff < 0.2:
-            quads_ID.append(min_diff_target)
-            minpoints_list.append(min_diff)
-        else:
-            quads_ID.append(-1)
-            minpoints_list.append(min_diff)
-
-    return quads_ID, minpoints_list, warpped_img_list
+    return quads_ID, warped_img_list
 
 
 def marker_detection(
     frame,
     camera_matrix,
-    template_ids=range(1, 9),
-    area_filter_size=30,
-    seg_papram=None,
     verbose=True,
-    height_range=(-10000.0, 200000.0),
+    height_range=(-10, 10),
     exchange_station=False,
 ):
+    """
+    detect markers and poses of quads in RGB image `frame`
+    Input:
+        `height_range`: used to distinguish between block1-6 (no higher than +0.2m, 
+            much lower when not stacked) and gameinfo board (much higher than blocks)
+            note that y axis in camera frame is downward. 
+            e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
+        exchange_station: if True, mask the lower part of the image to detect gameinfo board.
+            can be a substitute of `height_range` to detect gameinfo board.
+    Output:
+        quads_id, quads, area_list, tvec_list, rvec_list
+    """
     if exchange_station:
         tframe = copy.deepcopy(frame)
-        tframe[int(tframe.shape[0] * 0.32) :, :, :] = 0
-        boolImg, _ = preprocessing_exchange(tframe)
+        tframe[int(tframe.shape[0] * 0.32):, :, :] = 0
+        height_range = (-10, -0.2)
+        boolImg, _ = preprocessing(tframe)
+        # cv2.imshow("exchange_station tframe", tframe)
+        # cv2.waitKey(0)
     else:
         boolImg, _ = preprocessing(frame)
     
-    quads, tvec_list, rvec_list, area_list, ori_quads = square_detection(
-        boolImg, camera_matrix, area_filter_size=area_filter_size, height_range=height_range
-    )
-    # quads_ID, minpoints_list, warpped_img_list = classification(
-    #     frame, quads, template_ids=template_ids
-    # )
-    quads_ID, minpoints_list, warpped_img_list = classification_cnn(
-        boolImg, quads
-    )
+    quads, tvec_list, rvec_list, area_list, _ = square_detection(boolImg, camera_matrix, height_range=height_range)
+    quads_id, warpped_img_list = classification_cnn(boolImg, quads)
     if verbose:
-        id = {0: "*", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "B", 8: "O", 9: "X"}
+        id2tag = {0: "*", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "B", 8: "O", 9: "X"}
         for i in range(len(quads)):
             bbox = cv2.boundingRect(quads[i])
             try:
                 cv2.putText(
                     frame,
-                    id[quads_ID[i]],
+                    id2tag[quads_id[i]],
                     (bbox[0], bbox[1]),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
@@ -398,13 +293,12 @@ def marker_detection(
             except:
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
-    ids = [i for i in range(len(quads_ID)) if quads_ID[i] >= 1 and quads_ID[i] <= 8]
+    # extract indices of valid quads in `quads_ID`
+    ids = [i for i in range(len(quads_id)) if quads_id[i] >= 1 and quads_id[i] <= 9]
     return (
-        [quads_ID[_] for _ in ids],
+        [quads_id[_] for _ in ids],
         [quads[_] for _ in ids],
         [area_list[_] for _ in ids],
         [tvec_list[_] for _ in ids],
         [rvec_list[_] for _ in ids],
-        warpped_img_list,
-        minpoints_list,
     )
