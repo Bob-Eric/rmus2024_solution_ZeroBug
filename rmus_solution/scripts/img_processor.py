@@ -20,18 +20,10 @@ from detect import marker_detection
 
 class ModeRequese(IntEnum):
     DoNothing = 0
-    One = 1
-    Two = 2
-    Three = 3
-    Four = 4
-    Five = 5
-    Six = 6
-    B = 7
-    O = 8
-    X = 9
-    GameInfo = 10
+    BlockInfo = 1
+    GameInfo = 2
 
-    End = 11
+    End = 3
 
 
 def pose_aruco_2_ros(rvec, tvec):
@@ -145,7 +137,7 @@ class Processor:
             x = (quads[0][0][0] + quads[1][0][0] + quads[2][0][0] + quads[3][0][0]) / 4
             digits_list.append((id, x))
         if len(digits_list) != 3:
-            print(f"detected {len(digits_list)} digits in gameinfo board, not 3")
+            # print(f"detected {len(digits_list)} digits in gameinfo board, not 3")
             return None
         digits_list.sort(key=lambda pair: pair[1])
         gameinfo = [id for (id, x) in digits_list]
@@ -185,7 +177,12 @@ class Processor:
             if id in id_list:
                 ## block `id` is detected in image
                 idx = id_list.index(id)
-                block_info = [pose_list[idx], gpose_list[idx], self.this_image_time_ms]
+                block_info = [
+                    pose_list[idx],
+                    gpose_list[idx],
+                    self.this_image_time_ms,
+                    True,
+                ]
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
@@ -197,7 +194,7 @@ class Processor:
                 gpose_stamp.header.frame_id = coord_glb
                 gpose_stamp.pose = gpose
                 pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
-                block_info_makeup = [pose, gpose, self.this_image_time_ms]
+                block_info_makeup = [pose, gpose, self.this_image_time_ms, False]
                 self.blocks_info[i] = block_info_makeup
                 ## if not working, just set it to None
                 # this.blocks_info[i] = None
@@ -212,6 +209,7 @@ class Processor:
             marker.id = i + 1
             marker.pose = self.blocks_info[i][0]
             marker.gpose = self.blocks_info[i][1]
+            marker.in_cam = self.blocks_info[i][3]
             marker_list.markerInfoList.append(marker)
         self.pub_b.publish(marker_list)
 
