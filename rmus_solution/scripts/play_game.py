@@ -6,6 +6,7 @@ from std_msgs.msg import UInt8MultiArray
 from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
 from manipulater import TrimerworkRequest
 from navi_control import MissionResquest
+from img_processor import ModeRequese
 
 
 class gamecore:
@@ -21,7 +22,7 @@ class gamecore:
         rospy.sleep(2)
 
         self.trim_res = self.trimer(TrimerworkRequest.Reset, "")
-        self.response = self.img_switch_mode(9)
+        self.response = self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation_result = self.navigation(MissionResquest.Noticeboard, "")
 
         while not rospy.is_shutdown():
@@ -61,7 +62,7 @@ class gamecore:
                 rospy.sleep(0.5)
 
     def test_navigation(self):
-        self.response = self.img_switch_mode(0)
+        self.response = self.img_switch_mode(ModeRequese.DoNothing)
         for i in range(0, 3):
             self.navigation_result = self.navigation(
                 MissionResquest.MiningArea_1 + i, ""
@@ -79,19 +80,15 @@ class gamecore:
                     else:
                         break
 
-            self.response = self.img_switch_mode(0)
+            self.response = self.img_switch_mode(ModeRequese.DoNothing)
             self.navigation_result = self.navigation(MissionResquest.Station_1 + i, "")
-            station = min(max(7, 6 + i), 8)
-            self.response = self.img_switch_mode(station)
+            self.response = self.img_switch_mode(ModeRequese.B + i)
 
-            if i == 1:
-                trimer_response = self.trimer(TrimerworkRequest.PlaceHighly, "")
-            else:
-                trimer_response = self.trimer(TrimerworkRequest.Place, "")
+            trimer_response = self.trimer(TrimerworkRequest.Place, "")
 
-            self.response = self.img_switch_mode(0)
+            self.response = self.img_switch_mode(ModeRequese.DoNothing)
         self.navigation_result = self.navigation(MissionResquest.Park, "")
-        self.response = self.img_switch_mode(0)
+        self.response = self.img_switch_mode(ModeRequese.DoNothing)
         ...
 
 
