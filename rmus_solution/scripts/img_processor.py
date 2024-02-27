@@ -95,7 +95,7 @@ class Processor:
         )
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
-        self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfo, queue_size=1)
+        self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
@@ -106,7 +106,12 @@ class Processor:
             1000 * (image.header.stamp.secs - self.start_time)
         )
         locked_current_mode = self.current_mode
-        # detect 3 wanted blocks
+
+        ## update blocks_info (block 1-6 and B, O, X) and publish it
+        self.update_blocks_info(self.image)
+        self.publish_blocks_info()
+
+        # detect 3 wanted blocks from gameinfo board
         if locked_current_mode == ModeRequese.GameInfo:
             detected_gameinfo = self.get_gameinfo(self.image)
             if detected_gameinfo is not None:
@@ -114,20 +119,10 @@ class Processor:
                     self.detected_gameinfo = detected_gameinfo
                 assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
                 self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
-        # detect block 1-6 and B, O, X
-        elif ModeRequese.One <= locked_current_mode <= ModeRequese.X:
-            self.update_blocks_info(self.image)
-            if self.blocks_info[locked_current_mode - 1] is not None:
-                marker_info = MarkerInfo()
-                marker_info.id = locked_current_mode
-                marker_info.pose = self.blocks_info[locked_current_mode - 1][0]
-                self.pub_b.publish(marker_info)
-        else:
-            ## for debug:
-            quads_id, quads, area_list, tvec_list, rvec_list = marker_detection(
-                self.image, self.camera_matrix, self.verbose
-            )
         self.current_visualization_image = self.image
+
+    def depthCallback(self, image):
+        self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
 
     def modeCallBack(self, req):
         if ModeRequese.DoNothing <= ModeRequese(req.mode) < ModeRequese.End:
@@ -175,7 +170,6 @@ class Processor:
         inv_trans = self.tfBuffer.lookup_transform(
             coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
         )
-        # gpose_list.append(tf2_geometry_msgs.do_transform_pose(pose, trans))
         for pose in pose_list:
             ## define pose stamped in camera_link
             pose_stamp = tf2_geometry_msgs.PoseStamped()
@@ -209,6 +203,19 @@ class Processor:
                 # this.blocks_info[i] = None
         return
 
+    def publish_blocks_info(self):
+        marker_list = MarkerInfoList()
+        for i in range(len(self.blocks_info)):
+            if self.blocks_info[i] is None:
+                continue
+            marker = MarkerInfo()
+            marker.id = i + 1
+            marker.pose = self.blocks_info[i][0]
+            marker.gpose = self.blocks_info[i][1]
+            marker_list.markerInfoList.append(marker)
+        self.pub_b.publish(marker_list)
+
+    ## not used yet, but may be useful when sim2real due to noise
     def get_current_depth(self, quads):
         locked_depth = self.depth_img
         new_contour = quads.copy()
@@ -247,7 +254,7 @@ class Processor:
         while not rospy.is_shutdown():
             try:
                 if self.current_visualization_image is not None:
-                    cv2.imshow("frame", self.current_visualization_image)
+                    cv2.imshow("visualization", self.current_visualization_image)
                     cv2.waitKey(33)
             except:
                 self.collapsed = False
@@ -256,6 +263,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.DoNothing, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
