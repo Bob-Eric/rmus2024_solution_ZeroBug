@@ -76,49 +76,41 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
     quads = []
     quads_f = []
 
-    contours, _ = cv2.findContours(
-        grayImg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    
-    contours = [c for c in contours if cv2.contourArea(c) > area_thresh]
+    # _, fillImg, _, _ = cv2.floodFill(grayImg, None, (0, 0), 255)
+    # fillImg = cv2.bitwise_not(fillImg)
+    # digits, _ = cv2.findContours(fillImg, cv2.RETR_FLOODFILL)
+    # cv2.imshow("TEST", fillImg)
+    # cv2.waitKey(0)
 
-    if len(contours) > 0:
-        contours = sorted(contours, key=cv2.contourArea, reverse=False)
-        for i, contour in enumerate(contours):
-            x, y, w, h = cv2.boundingRect(contour)
-            if h/w > 2 or w/h > 2:
-                continue
-            peri = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-            # print(len(approx))
-            if len(approx) != 4:
-                continue
-            """ warped rect found """
-            quads.append(approx)
-            quads_f.append(approx.astype(float))
-
-            ########## for debug ##########
-            # testImg = cv2.cvtColor(grayImg, cv2.COLOR_GRAY2BGR)
-            # frame = cv2.drawContours(testImg, [contour], -1, (0, 255, 0), 1)
-            # cv2.imshow("frame", frame)
-            # cv2.waitKey(0)
-            # # warp the image
-            # src = approx.astype(np.float32)
-            # l = 200
-            # dst = np.array([[0, 0], [0, l-1], [l-1, l-1], [l-1, 0]], dtype=np.float32)
-            # M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
-            # warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
-            # warped = cv2.bitwise_not(warped)
-            # cv2.imshow(f"warped {i}", warped)
-            # if (cv2.waitKey(0) == ord('s')):
-            #     cv2.imwrite(f"warped_{i}.png", warped)
-            # import time
-            # t_sta = time.time()
-            # # classify
-            # print(f"warped {i}, classified: {classify(warped)}")
-            # print(f"Time cost: {time.time() - t_sta}")
-            ########## debug end ##########
-
+    contours, hierarchy = cv2.findContours(grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours_filt = []
+    for i, c in enumerate(contours):
+        child_idx = hierarchy[0, i, 2]
+        ## must have digits inside
+        if child_idx == -1: # or cv2.contourArea(contours[child_idx]) < 10:
+            continue
+        if cv2.contourArea(c) < area_thresh:
+            continue
+        contours_filt.append(c)
+        # print("contour added")
+        # cv2.drawContours(rgbImage, [c], -1, (255, 0, 0), 3)
+        # cv2.imshow("rgbImage", rgbImage)
+        # cv2.waitKey(0)
+            
+    contours = contours_filt
+    for i, contour in enumerate(contours):
+        x, y, w, h = cv2.boundingRect(contour)
+        if h/w > 2 or w/h > 2:
+            continue
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        # print(len(approx))
+        if len(approx) != 4:
+            continue
+        """ warped rect found """
+        quads.append(approx)
+        quads_f.append(approx.astype(float))
+            
     rvec_list = []
     tvec_list = []
     quads_prj = []
@@ -128,25 +120,20 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
     """ block center's (0, 0, 0) """
     half_len = 0.5 * block_size
     model_object = np.array(
-        [
-            (-half_len, -half_len, -half_len),
-            (-half_len, +half_len, -half_len),
-            (+half_len, +half_len, -half_len),
-            (+half_len, -half_len, -half_len),
-        ]
+       [(-half_len, -half_len, -half_len),
+        (-half_len, +half_len, -half_len),
+        (+half_len, +half_len, -half_len),
+        (+half_len, -half_len, -half_len)]
     )
-
     distort_coeffs = np.array([[0, 0, 0, 0]], dtype=np.float32)
     for quad in quads_f:
         model_image = np.squeeze(quad)
         """ calculate the pose of the corner points by pnp solving """
         ret, rvec, tvec = cv2.solvePnP(
-            model_object, model_image, camera_matrix, distort_coeffs
-        )
+            model_object, model_image, camera_matrix, distort_coeffs)
         """ reconstruct corner points in image plane """
         projectedPoints, _ = cv2.projectPoints(
-            model_object, rvec, tvec, camera_matrix, distort_coeffs
-        )
+            model_object, rvec, tvec, camera_matrix, distort_coeffs)
 
         err = 0
         """ compute the reconstruction error """
@@ -156,11 +143,13 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
         """ check if reconstruction error is small enough """
         if err / area > 0.005:
             continue
-        """ chech if block_height is within given height_range """
+
         quad_height = tvec[1]
         # print(f"quad: {quad}")
+        """ chech if quad_height is within given height_range """
         if quad_height < height_range[0] or quad_height > height_range[1]:
             continue
+        
         quads_prj.append(np.round(projectedPoints).astype(int))
         rvec_list.append(rvec)
         tvec_list.append(tvec)
@@ -216,7 +205,8 @@ def marker_detection(
         height_range = (-10, -0.2)
     boolImg, _ = preprocessing(frame)
     
-    quads, tvec_list, rvec_list, area_list, _ = square_detection(boolImg, camera_matrix, height_range=height_range)
+    quads, tvec_list, rvec_list, area_list, _ = square_detection(
+        boolImg, camera_matrix, height_range=height_range, area_thresh=300)
     quads_id, warpped_img_list = classification_cnn(boolImg, quads)
     if verbose:
         id2tag = {0: "*", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "B", 8: "O", 9: "X"}
