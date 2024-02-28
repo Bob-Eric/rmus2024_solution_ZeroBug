@@ -59,6 +59,7 @@ def classify(image, is_white_digit=True):
     idx = torch.argmax(logits, dim=1).item()
     return idx, logits
 
+
 def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_thresh=225):
     """ 
     Detect warped squares (block surfaces) in grayImg
@@ -123,13 +124,15 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
     quads_prj = []
     area_list = []
 
-    block_size = 0.05
+    block_size = 0.045
+    """ block center's (0, 0, 0) """
+    half_len = 0.5 * block_size
     model_object = np.array(
         [
-            (0 - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
-            (block_size - 0.5 * block_size, 0 - 0.5 * block_size, 0.0),
-            (block_size - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
-            (0 - 0.5 * block_size, block_size - 0.5 * block_size, 0.0),
+            (-half_len, -half_len, -half_len),
+            (-half_len, +half_len, -half_len),
+            (+half_len, +half_len, -half_len),
+            (+half_len, -half_len, -half_len),
         ]
     )
 
