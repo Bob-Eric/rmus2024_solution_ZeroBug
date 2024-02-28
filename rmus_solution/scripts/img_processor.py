@@ -14,24 +14,16 @@ import cv2
 import numpy as np
 from threading import Thread
 from scipy.spatial.transform import Rotation as R
-
+from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
 
 
 class ModeRequese(IntEnum):
     DoNothing = 0
-    One = 1
-    Two = 2
-    Three = 3
-    Four = 4
-    Five = 5
-    Six = 6
-    B = 7
-    O = 8
-    X = 9
-    GameInfo = 10
+    BlockInfo = 1
+    GameInfo = 2
 
-    End = 11
+    End = 3
 
 
 def pose_aruco_2_ros(rvec, tvec):
@@ -62,11 +54,11 @@ class Processor:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_message("/camera/color/image_raw", Image, timeout=5.0)
-                rospy.loginfo("Get topic /camera/color/image_raw.")
+                rospy.wait_for_message("/rtabmap/rgbd_image", RGBDImage, timeout=5.0)
+                rospy.loginfo("Get topic /rtabmap/rgbd_image.")
                 break
             except:
-                rospy.logwarn("Waiting for message /camera/color/image_raw.")
+                rospy.logwarn("Waiting for message /rtabmap/rgbd_image.")
                 continue
 
         while not rospy.is_shutdown():
@@ -91,13 +83,7 @@ class Processor:
                 self.collapsed = False
                 rospy.logerr("The visualization window has collapsed!")
         rospy.Subscriber(
-            "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
-        )
-        rospy.Subscriber(
-            "/camera/aligned_depth_to_color/image_raw",
-            Image,
-            self.depthCallback,
-            queue_size=1,
+            "/rtabmap/rgbd_image", RGBDImage, self.imageCallback, queue_size=1
         )
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
@@ -105,8 +91,9 @@ class Processor:
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
-    def imageCallback(self, image):
-        self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
+    def imageCallback(self, image: RGBDImage):
+        self.image = self.bridge.imgmsg_to_cv2(image.rgb, "bgr8")
+        self.depth_img = self.bridge.imgmsg_to_cv2(image.depth, "32FC1")
         self.this_image_time_ms = int(image.header.stamp.nsecs / 1e6) + int(
             1000 * (image.header.stamp.secs - self.start_time)
         )
@@ -129,7 +116,6 @@ class Processor:
                 assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
             self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         self.current_visualization_image = self.image
-        return 
 
     def depthCallback(self, image):
         self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
@@ -155,7 +141,7 @@ class Processor:
             x = (quads[0][0][0] + quads[1][0][0] + quads[2][0][0] + quads[3][0][0]) / 4
             digits_list.append((id, x))
         if len(digits_list) != 3:
-            print(f"detected {len(digits_list)} digits in gameinfo board, not 3")
+            # print(f"detected {len(digits_list)} digits in gameinfo board, not 3")
             return None
         digits_list.sort(key=lambda pair: pair[1])
         gameinfo = [id for (id, x) in digits_list]
@@ -195,7 +181,12 @@ class Processor:
             if id in id_list:
                 ## block `id` is detected in image
                 idx = id_list.index(id)
-                block_info = [pose_list[idx], gpose_list[idx], self.this_image_time_ms]
+                block_info = [
+                    pose_list[idx],
+                    gpose_list[idx],
+                    self.this_image_time_ms,
+                    True,
+                ]
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
@@ -207,7 +198,7 @@ class Processor:
                 gpose_stamp.header.frame_id = coord_glb
                 gpose_stamp.pose = gpose
                 pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
-                block_info_makeup = [pose, gpose, self.this_image_time_ms]
+                block_info_makeup = [pose, gpose, self.this_image_time_ms, False]
                 self.blocks_info[i] = block_info_makeup
                 ## if not working, just set it to None
                 # this.blocks_info[i] = None
@@ -222,6 +213,7 @@ class Processor:
             marker.id = i + 1
             marker.pose = self.blocks_info[i][0]
             marker.gpose = self.blocks_info[i][1]
+            marker.in_cam = self.blocks_info[i][3]
             marker_list.markerInfoList.append(marker)
         self.pub_b.publish(marker_list)
 
