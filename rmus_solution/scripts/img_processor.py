@@ -112,9 +112,13 @@ class Processor:
         )
         locked_current_mode = self.current_mode
 
-        ## update blocks_info (block 1-6 and B, O, X) and publish it
-        self.update_blocks_info(self.image)
-        self.publish_blocks_info()
+        if locked_current_mode == ModeRequese.DoNothing:
+            ## only try detection, don't update
+            marker_detection(self.image, self.camera_matrix, self.verbose)
+        else:
+            ## update blocks_info (block 1-6 and B, O, X) and publish it
+            self.update_blocks_info(self.image)
+            self.publish_blocks_info()
 
         # detect 3 wanted blocks from gameinfo board
         if locked_current_mode == ModeRequese.GameInfo:
@@ -123,7 +127,7 @@ class Processor:
                 if self.detected_gameinfo is None:
                     self.detected_gameinfo = detected_gameinfo
                 assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
-                self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
+            self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         self.current_visualization_image = self.image
         return 
 
@@ -269,6 +273,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.DoNothing, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
