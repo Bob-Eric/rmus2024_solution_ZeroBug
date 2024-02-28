@@ -5,6 +5,7 @@
   <arg name="odometry" default="rgbd" doc="method type [rgbd, ekf, icp]" />
   <arg name="localization" default="false" />
   <arg name="simulation" default="false" />
+  <arg name="output" default="screen" />
   <arg if="$(arg localization)" name="args" default="" />
   <arg unless="$(arg localization)" name="args" default="-d" />
 
@@ -25,7 +26,7 @@
   <group ns="rtabmap">
     <!-- Use RGBD synchronization -->
     <node pkg="nodelet" type="nodelet" name="rgbd_sync" args="standalone rtabmap_sync/rgbd_sync"
-      output="screen">
+      output="$(arg output)">
       <remap from="rgb/image" to="$(arg rgb_topic)" />
       <remap from="depth/image" to="$(arg depth_topic)" />
       <remap from="rgb/camera_info" to="$(arg camera_info_topic)" />
@@ -37,7 +38,7 @@
     </node>
 
     <!-- Mapping -->
-    <node name="rtabmap" pkg="rtabmap_slam" type="rtabmap" output="screen" args="$(arg args)">
+    <node name="rtabmap" pkg="rtabmap_slam" type="rtabmap" output="$(arg output)" args="$(arg args)">
       <param name="database_path" type="string" value="$(arg database_path)" />
       <param name="frame_id" type="string" value="base_link" />
       <param name="wait_for_transform_duration" type="double" value="$(arg wait_for_transform)" />
@@ -109,7 +110,7 @@
         <remap from="imu_data" to="transfer/imu" />
         <remap from="robot_pose_ekf/odom_combined" to="odom_combined" />
       </node>
-      <node pkg="rtab_slam" type="ekf_transfer.py" name="ekf_transfer" output="screen" />
+      <node pkg="rtab_slam" type="ekf_transfer.py" name="ekf_transfer" output="$(arg output)" />
     </group>
 
     <node if="$(eval 'icp' in arg('odometry'))" pkg="rtabmap_odom" type="icp_odometry"
