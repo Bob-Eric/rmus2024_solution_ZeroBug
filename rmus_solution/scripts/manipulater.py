@@ -116,6 +116,7 @@ class manipulater:
         self.pos_y_pid.reset()
 
     def markerPoseCb(self, msg: MarkerInfoList):
+        """ update self.current_marker_poses of self.desired_cube_id """
         for markerInfo in msg.markerInfoList:
             markerInfo: MarkerInfo
             if markerInfo.id == self.desired_cube_id:
