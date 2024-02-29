@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import threading
 import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
@@ -40,17 +39,20 @@ class manipulater:
 
         self.desired_cube_id = 0
 
-        self.ros_rate = 30
-        self.desired_cube_pos_in_cam = [0.39, 0.00]
-        self.desired_tag_pos_in_cam = [0.32, 0.00]
         self.cube_goal_tolerance = [0.01, 0.01]
         self.tag_goal_tolerance = [0.01, 0.01]
-        pid_cal_time = 1 / self.ros_rate
 
-        self.pid_P = 4.0
-        self.pid_I = 8.0
+        ############### Dynamic params ###############
+        self.ros_rate = 30
+        self.desired_cube_pos_in_cam = [0.5, 0.00]
+        self.desired_tag_pos_in_cam = [0.5, 0.00]
+        self.pid_P = 0
+        self.pid_I = 0
         self.pid_D = 0.0
         self.xy_seperate_I_threshold = [0.1, 0.1]
+        ############### Dynamic params ###############
+
+        pid_cal_time = 1 / self.ros_rate
 
         self.pos_x_pid = PID(
             self.pid_P,
@@ -79,6 +81,7 @@ class manipulater:
         self.server = Server(manipulater_PIDConfig, self.dynamic_reconfigure_callback)
 
     def dynamic_reconfigure_callback(self, config: dict, level: int):
+        self.ros_rate = config["control_frequency"]
         self.desired_cube_pos_in_cam[0] = config["desired_cube_x"]
         self.desired_cube_pos_in_cam[1] = config["desired_cube_y"]
         self.pid_P = config["Kp"]
@@ -90,9 +93,14 @@ class manipulater:
             config["x_seperate_I_threshold"],
             config["y_seperate_I_threshold"],
         ]
+
+        self.update_pid_params([0, 0])
         return config
 
     def update_pid_params(self, setpoint: list):
+
+        self.pos_x_pid.sample_time = 1 / self.ros_rate
+        self.pos_y_pid.sample_time = 1 / self.ros_rate
         self.pos_x_pid.setpoint = setpoint[0]
         self.pos_y_pid.setpoint = setpoint[1]
         self.pos_x_pid.Kp = self.pid_P
@@ -101,6 +109,8 @@ class manipulater:
         self.pos_y_pid.Kp = self.pid_P
         self.pos_y_pid.Ki = self.pid_I
         self.pos_y_pid.Kd = self.pid_D
+
+        # rospy.loginfo(f"update_pid_params: {self.pos_x_pid}")
 
         self.pos_x_pid.reset()
         self.pos_y_pid.reset()
