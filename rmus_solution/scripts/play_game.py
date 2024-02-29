@@ -4,7 +4,7 @@
 import rospy
 from std_msgs.msg import UInt8MultiArray
 from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
-from manipulater import TrimerworkRequest
+from manipulater import AlignerworkRequest
 from navi_control import PointName, router
 from img_processor import ModeRequese
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
@@ -20,13 +20,13 @@ class gamecore:
 
         rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
-        self.trimer = rospy.ServiceProxy("/let_manipulater_work", graspsignal)
+        self.aligner = rospy.ServiceProxy("/let_manipulater_work", graspsignal)
         self.img_switch_mode = rospy.ServiceProxy(
             "/image_processor_switch_mode", switch
         )
-        rospy.sleep(2)
+        rospy.sleep(1)
 
-        self.trim_res = self.trimer(TrimerworkRequest.Reset, 0, "")
+        self.align_res = self.aligner(AlignerworkRequest.Reset, 0, "")
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation_result = self.navigation(PointName.Noticeboard, "")
 
@@ -44,6 +44,10 @@ class gamecore:
         self.blockinfo_list = MarkerInfoList()
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
 
+        """ gamecore state params: """
+        self.observing = True          ## if self.observing == True, classify the block to mining areas
+
+        """ gamecore logic: """
         # self.test_navigation()
         self.observation()
         self.grasp_and_place()
@@ -75,12 +79,15 @@ class gamecore:
                 rospy.sleep(0.5)
 
     def observation(self):
+        print("----------observing----------")
         self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        self.observation = False
+        print("----------done observing----------")
 
     def update_block_info(self, blockinfo_list: MarkerInfoList):
         self.blockinfo_list = blockinfo_list
@@ -89,7 +96,9 @@ class gamecore:
         #     if blockinfo.id != 4 and blockinfo.id != 6:
         #         if blockinfo.in_cam:
         #             rospy.logwarn(f"Block {blockinfo.id} is in the cam.")
-        self.classify_block(blockinfo_list)
+        if self.observing:
+            self.classify_block(blockinfo_list)
+        return
 
     def classify_block(self, blockinfo_list: MarkerInfoList):
         blockinfo: MarkerInfo
@@ -126,11 +135,11 @@ class gamecore:
                 if j < i:
                     continue
                 self.response = self.img_switch_mode(target)
-                trimer_response: graspsignalResponse = self.trimer(
-                    TrimerworkRequest.Grasp, ""
+                aligner_response: graspsignalResponse = self.aligner(
+                    AlignerworkRequest.Grasp, ""
                 )
-                if trimer_response.res == True:
-                    if trimer_response.response == "Successfully Grasp fake":
+                if aligner_response.res == True:
+                    if aligner_response.response == "Successfully Grasp fake":
                         continue
                     else:
                         break
@@ -139,7 +148,7 @@ class gamecore:
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
             self.response = self.img_switch_mode(ModeRequese.B + i)
 
-            trimer_response = self.trimer(TrimerworkRequest.Place, "")
+            aligner_response = self.aligner(AlignerworkRequest.Place, "")
 
             self.response = self.img_switch_mode(ModeRequese.DoNothing)
         self.navigation_result = self.navigation(PointName.Park, "")
@@ -147,7 +156,9 @@ class gamecore:
         ...
 
     def grasp_and_place(self):
+        print("----------grasping three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
+            print(f"----------grasping No.{i} block(id={target})----------")
             mining_area_id = self.block_mining_area[target]
             rospy.loginfo(f"target: {target}, mining_area_id: {mining_area_id}")
             if mining_area_id == 0:
@@ -165,10 +176,12 @@ class gamecore:
             else:
                 rospy.logwarn(f"Block {target} is not in any mining area.")
                 continue
-            self.trim_res = self.trimer(TrimerworkRequest.Grasp, target, "")
+            self.align_res = self.aligner(AlignerworkRequest.Grasp, target, "")
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.trim_res = self.trimer(TrimerworkRequest.Place, 7 + i, "")
-            ...
+            self.align_res = self.aligner(AlignerworkRequest.Place, 7 + i, "")
+            print(f"----------done grasping No.{i} block(id={target})----------")
+        print("----------done grasping three basic blocks----------")
+        
 
 
 if __name__ == "__main__":
