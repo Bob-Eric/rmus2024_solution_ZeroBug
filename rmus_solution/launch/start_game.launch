@@ -2,12 +2,12 @@
 
     <node pkg="rmus_solution" type="manipulater.py" name="shadow_trimer" output="screen" />
     <node pkg="rmus_solution" type="img_processor.py" name="img_process_node" output="screen" />
-    <!-- <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen" /> -->
+    <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen" />
 
-    <include file="$(find rmus_solution)/launch/local_navigation.launch" />
+    <!-- <include file="$(find rmus_solution)/launch/local_navigation.launch" /> -->
     <!-- <include file="$(find ep_teleop)/launch/keyboard.launch" /> -->
-    <node pkg="tf2_ros" type="static_transform_publisher"
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher"
         name="camera_aligned_depth_to_color_frame_correct"
-        args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" />
+        args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" /> -->
 
 </launch>

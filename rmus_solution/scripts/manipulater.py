@@ -41,7 +41,7 @@ class manipulater:
 
         self.desired_cube_pos_in_cam = [0.385, 0.00]
         self.xy_goal_tolerance = [0.02, 0.01]
-        pid_cal_time = 1 / 30
+        pid_cal_time = 1 / 10
 
         self.pid_P = 4.0
         self.pid_I = 8.0
@@ -237,7 +237,7 @@ class manipulater:
 
     def place_cube(self, rate, should_place_highly=False):
         self.sendBaseVel([0.0, 0.0, 0.0])
-        rospy.sleep(2.0)
+        rospy.sleep(0.5)
         rospy.loginfo("First trim then place")
         if should_place_highly:
             self.arm_place_highly_pos()
@@ -293,10 +293,8 @@ class manipulater:
 
     def is_near_desired_position(self, target_pos):
         return (
-            abs(target_pos[0] - self.desired_cube_pos_in_cam[0])
-            <= self.xy_goal_tolerance[0]
-            and abs(target_pos[1] - self.desired_cube_pos_in_cam[1])
-            <= self.xy_goal_tolerance[1]
+            abs(target_pos[0] - self.desired_cube_pos_in_cam[0]) <= self.xy_goal_tolerance[0]
+            and abs(target_pos[1] - self.desired_cube_pos_in_cam[1]) <= self.xy_goal_tolerance[1]
         )
 
     def cal_cmd_vel_pid(self, target_pos):

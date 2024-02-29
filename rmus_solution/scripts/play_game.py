@@ -24,7 +24,7 @@ class gamecore:
         self.img_switch_mode = rospy.ServiceProxy(
             "/image_processor_switch_mode", switch
         )
-        rospy.sleep(2)
+        rospy.sleep(1)
 
         self.trim_res = self.trimer(TrimerworkRequest.Reset, 0, "")
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
@@ -44,6 +44,10 @@ class gamecore:
         self.blockinfo_list = MarkerInfoList()
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
 
+        """ gamecore state params: """
+        self.observing = True          ## if self.observing == True, classify the block to mining areas
+
+        """ gamecore logic: """
         # self.test_navigation()
         self.observation()
         self.grasp_and_place()
@@ -75,12 +79,15 @@ class gamecore:
                 rospy.sleep(0.5)
 
     def observation(self):
+        print("----------observing----------")
         self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        self.observation = False
+        print("----------done observing----------")
 
     def update_block_info(self, blockinfo_list: MarkerInfoList):
         self.blockinfo_list = blockinfo_list
@@ -89,7 +96,9 @@ class gamecore:
         #     if blockinfo.id != 4 and blockinfo.id != 6:
         #         if blockinfo.in_cam:
         #             rospy.logwarn(f"Block {blockinfo.id} is in the cam.")
-        self.classify_block(blockinfo_list)
+        if self.observing:
+            self.classify_block(blockinfo_list)
+        return
 
     def classify_block(self, blockinfo_list: MarkerInfoList):
         blockinfo: MarkerInfo
@@ -147,7 +156,9 @@ class gamecore:
         ...
 
     def grasp_and_place(self):
+        print("----------grasping three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
+            print(f"----------grasping No.{i} block(id={target})----------")
             mining_area_id = self.block_mining_area[target]
             rospy.loginfo(f"target: {target}, mining_area_id: {mining_area_id}")
             if mining_area_id == 0:
@@ -168,7 +179,8 @@ class gamecore:
             self.trim_res = self.trimer(TrimerworkRequest.Grasp, target, "")
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
             self.trim_res = self.trimer(TrimerworkRequest.Place, 7 + i, "")
-            ...
+            print(f"----------done grasping No.{i} block(id={target})----------")
+        print("----------done grasping three basic blocks----------")
 
 
 if __name__ == "__main__":
