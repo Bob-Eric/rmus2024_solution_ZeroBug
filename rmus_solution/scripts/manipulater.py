@@ -202,7 +202,7 @@ class manipulater:
         rospy.loginfo("First trim then grasp")
         rospy.loginfo("Trim to the right place")
         self.sendBaseVel([0.0, 0.0, 0.0])
-        rospy.sleep(2.0)
+        rospy.sleep(0.5)
         self.open_gripper()
         rospy.sleep(0.1)
         resp = graspsignalResponse()
@@ -223,24 +223,23 @@ class manipulater:
             if self.is_near_desired_position(
                 target_pos, self.desired_cube_pos_in_cam, self.cube_goal_tolerance
             ):
-                self.sendBaseVel([0.25, 0.0, 0.0])
-                rospy.sleep(0.3)
+                # self.sendBaseVel([0.25, 0.0, 0.0])
+                # rospy.sleep(0.3)
                 self.sendBaseVel([0.0, 0.0, 0.0])
-                rospy.sleep(1.0)
                 self.arm_grasp_pos()
-                rospy.sleep(1.0)
+                rospy.sleep(0.5)
                 rospy.loginfo("Place: reach the goal for placing.")
 
                 target_marker_pose = self.current_marker_poses
                 self.close_gripper()
-                rospy.sleep(1.0)
+                rospy.sleep(0.5)
 
                 self.close_gripper()
-                rospy.sleep(1.0)
+                rospy.sleep(0.5)
                 self.arm_reset()
 
                 self.sendBaseVel([-0.3, 0.0, 0.0])
-                rospy.sleep(0.4)
+                rospy.sleep(0.5)
                 self.sendBaseVel([0.0, 0.0, 0.0])
 
                 resp.res = True
@@ -254,7 +253,7 @@ class manipulater:
 
     def place_cube(self, rate, place_layer: int = 1):
         self.sendBaseVel([0.0, 0.0, 0.0])
-        rospy.sleep(2.0)
+        rospy.sleep(0.5)
         rospy.loginfo("First trim then place")
         if place_layer == 1:
             self.arm_place_pos()
@@ -285,13 +284,13 @@ class manipulater:
                     self.current_marker_poses
                 )
                 self.sendBaseVel([0.0, 0.0, 0.0])
-                rospy.sleep(1.0)
+                rospy.sleep(0.5)
                 self.open_gripper()
-                rospy.sleep(1.0)
-                self.arm_reset()
+                rospy.sleep(0.5)
 
+                self.arm_reset()
                 self.sendBaseVel([-0.3, 0.0, 0.0])
-                rospy.sleep(0.6)
+                rospy.sleep(0.5)
                 self.sendBaseVel([0.0, 0.0, 0.0])
 
                 resp = graspsignalResponse()
