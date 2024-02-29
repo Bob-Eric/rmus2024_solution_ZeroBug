@@ -7,10 +7,10 @@
     <node pkg="dynamic_reconfigure" type="dynparam" name="dynparam"
         args="load shadow_aligner $(find rmus_solution)/params/manipulater.yaml" output="screen" />
 
-    <!-- <include file="$(find rmus_solution)/launch/local_navigation.launch" /> -->
+    <include file="$(find rmus_solution)/launch/local_navigation.launch" />
     <!-- <include file="$(find ep_teleop)/launch/keyboard.launch" /> -->
-    <!-- <node pkg="tf2_ros" type="static_transform_publisher"
+    <node pkg="tf2_ros" type="static_transform_publisher"
         name="camera_aligned_depth_to_color_frame_correct"
-        args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" /> -->
+        args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" />
 
 </launch>
