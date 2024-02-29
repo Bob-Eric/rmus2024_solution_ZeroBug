@@ -19,7 +19,7 @@ from rmus_solution.msg import MarkerInfo
 class AlignerworkRequest(IntEnum):
     Reset = 0
     Grasp = 1
-    Place = 2
+    PlaceFirstLayer = 2
     PlaceSecondLayer = 3
     PlaceThirdLayer = 4
 
@@ -44,10 +44,10 @@ class manipulater:
 
         ############### Dynamic params ###############
         self.ros_rate = 10
-        self.desired_cube_pos_in_cam = [0.5, 0.00]
-        self.desired_tag_pos_in_cam = [0.5, 0.00]
-        self.pid_P = 0
-        self.pid_I = 0
+        self.desired_cube_pos_in_cam = [0.5, 0.0]
+        self.desired_tag_pos_in_cam = [0.5, 0.0]
+        self.pid_P = 0.0
+        self.pid_I = 0.0
         self.pid_D = 0.0
         self.xy_seperate_I_threshold = [0.1, 0.1]
         ############### Dynamic params ###############
@@ -189,7 +189,7 @@ class manipulater:
             resp = self.grasp_cube(rate)
             return resp
 
-        elif req.mode == AlignerworkRequest.Place:
+        elif req.mode == AlignerworkRequest.PlaceFirstLayer:
             resp = self.place_cube(rate, 1)
             return resp
         elif req.mode == AlignerworkRequest.PlaceSecondLayer:
