@@ -187,6 +187,17 @@ class Processor:
                     self.this_image_time_ms,
                     True,
                 ]
+
+                ## TODO: test if there are blocks whose gpose differs a lot from last gpose
+                if self.blocks_info[i] is not None and id == 7:
+                    last_gpose = self.blocks_info[i][1]
+                    p1 = np.array((last_gpose.position.x, last_gpose.position.y, last_gpose.position.z))
+                    p2 = np.array((gpose_list[idx].position.x, gpose_list[idx].position.y, gpose_list[idx].position.z))
+                    # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
+                    if np.linalg.norm(p1-p2) > 0.1:
+                        rospy.logwarn(f"Block B has moved a lot. Maybe misdetection.")
+                        continue
+
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
@@ -265,6 +276,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.DoNothing, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.BlockInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
