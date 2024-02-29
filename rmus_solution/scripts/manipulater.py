@@ -16,7 +16,7 @@ from enum import IntEnum
 from rmus_solution.msg import MarkerInfo
 
 
-class TrimerworkRequest(IntEnum):
+class AlignerworkRequest(IntEnum):
     Reset = 0
     Grasp = 1
     Place = 2
@@ -76,7 +76,7 @@ class manipulater:
         self.tfBuffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
         self.service = rospy.Service(
-            "/let_manipulater_work", graspsignal, self.trimerworkCallback
+            "/let_manipulater_work", graspsignal, self.AlignerworkCallback
         )
         self.server = Server(manipulater_PIDConfig, self.dynamic_reconfigure_callback)
 
@@ -153,10 +153,10 @@ class manipulater:
 
         return pos, angle
 
-    def trimerworkCallback(self, req: graspsignalRequest):
+    def AlignerworkCallback(self, req: graspsignalRequest):
         self.desired_cube_id = req.cube_id
         # Reset the arm
-        if req.mode == TrimerworkRequest.Reset:
+        if req.mode == AlignerworkRequest.Reset:
             self.arm_reset()
             rospy.sleep(0.2)
             self.open_gripper()
@@ -184,23 +184,23 @@ class manipulater:
 
         rate = rospy.Rate(self.ros_rate)
 
-        if req.mode == TrimerworkRequest.Grasp:
+        if req.mode == AlignerworkRequest.Grasp:
             resp = self.grasp_cube(rate)
             return resp
 
-        elif req.mode == TrimerworkRequest.Place:
+        elif req.mode == AlignerworkRequest.Place:
             resp = self.place_cube(rate, 1)
             return resp
-        elif req.mode == TrimerworkRequest.PlaceSecondLayer:
+        elif req.mode == AlignerworkRequest.PlaceSecondLayer:
             resp = self.place_cube(rate, 2)
             return resp
-        elif req.mode == TrimerworkRequest.PlaceThirdLayer:
+        elif req.mode == AlignerworkRequest.PlaceThirdLayer:
             resp = self.place_cube(rate, 3)
             return resp
 
     def grasp_cube(self, rate):
-        rospy.loginfo("First trim then grasp")
-        rospy.loginfo("Trim to the right place")
+        rospy.loginfo("First align then grasp")
+        rospy.loginfo("align to the right place")
         self.sendBaseVel([0.0, 0.0, 0.0])
         rospy.sleep(2.0)
         self.open_gripper()
@@ -255,7 +255,7 @@ class manipulater:
     def place_cube(self, rate, place_layer: int = 1):
         self.sendBaseVel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
-        rospy.loginfo("First trim then place")
+        rospy.loginfo("First align then place")
         if place_layer == 1:
             self.arm_place_pos()
         elif place_layer == 2:
@@ -275,11 +275,11 @@ class manipulater:
             if self.is_near_desired_position(
                 target_pos, self.desired_tag_pos_in_cam, self.tag_goal_tolerance
             ):
-                rospy.loginfo("Trim well in the all dimention, going open loop")
+                rospy.loginfo("Align well in the all dimention, going open loop")
 
                 rospy.loginfo("Place: reach the goal for placing.")
 
-                rospy.loginfo("Trim well in the horizon dimention")
+                rospy.loginfo("Align well in the horizon dimention")
 
                 target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
                     self.current_marker_poses
@@ -378,21 +378,21 @@ class manipulater:
         self.arm_position_pub.publish(reset_arm_msg)
 
     def arm_place_pos(self):
-        rospy.loginfo("<manipulater>: now prepare to grip")
+        rospy.loginfo("<manipulater>: now prepare to place (first layer)")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = -0.04
         self.arm_position_pub.publish(pose)
 
     def arm_place_pos_sec_layer(self):
-        rospy.loginfo("<manipulater>: now prepare to grip")
+        rospy.loginfo("<manipulater>: now prepare to grip (second layer)")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = 0.03
         self.arm_position_pub.publish(pose)
 
     def arm_place_pos_third_layer(self):
-        rospy.loginfo("<manipulater>: now prepare to grip")
+        rospy.loginfo("<manipulater>: now prepare to grip (third layer)")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = 0.08
