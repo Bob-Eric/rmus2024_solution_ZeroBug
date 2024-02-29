@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import threading
 import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
@@ -21,7 +20,8 @@ class TrimerworkRequest(IntEnum):
     Reset = 0
     Grasp = 1
     Place = 2
-    PlaceHighly = 3
+    PlaceSecondLayer = 3
+    PlaceThirdLayer = 4
 
 
 class manipulater:
@@ -39,14 +39,20 @@ class manipulater:
 
         self.desired_cube_id = 0
 
-        self.desired_cube_pos_in_cam = [0.385, 0.00]
-        self.xy_goal_tolerance = [0.02, 0.01]
-        pid_cal_time = 1 / 10
+        self.cube_goal_tolerance = [0.01, 0.01]
+        self.tag_goal_tolerance = [0.01, 0.01]
 
-        self.pid_P = 4.0
-        self.pid_I = 8.0
+        ############### Dynamic params ###############
+        self.ros_rate = 10
+        self.desired_cube_pos_in_cam = [0.5, 0.00]
+        self.desired_tag_pos_in_cam = [0.5, 0.00]
+        self.pid_P = 0
+        self.pid_I = 0
         self.pid_D = 0.0
         self.xy_seperate_I_threshold = [0.1, 0.1]
+        ############### Dynamic params ###############
+
+        pid_cal_time = 1 / self.ros_rate
 
         self.pos_x_pid = PID(
             self.pid_P,
@@ -67,7 +73,6 @@ class manipulater:
 
         self.target_pos_old = np.array([100, 100, 100])
 
-        self.ros_rate = 30
         self.tfBuffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
         self.service = rospy.Service(
@@ -76,22 +81,39 @@ class manipulater:
         self.server = Server(manipulater_PIDConfig, self.dynamic_reconfigure_callback)
 
     def dynamic_reconfigure_callback(self, config: dict, level: int):
+        self.ros_rate = config["control_frequency"]
+        self.desired_cube_pos_in_cam[0] = config["desired_cube_x"]
+        self.desired_cube_pos_in_cam[1] = config["desired_cube_y"]
         self.pid_P = config["Kp"]
         self.pid_I = config["Ki"]
         self.pid_D = config["Kd"]
+        self.desired_tag_pos_in_cam[0] = config["desired_tag_x"]
+        self.desired_tag_pos_in_cam[1] = config["desired_tag_y"]
+        self.xy_seperate_I_threshold = [
+            config["x_seperate_I_threshold"],
+            config["y_seperate_I_threshold"],
+        ]
+
+        self.update_pid_params([0, 0])
+        return config
+
+    def update_pid_params(self, setpoint: list):
+
+        self.pos_x_pid.sample_time = 1 / self.ros_rate
+        self.pos_y_pid.sample_time = 1 / self.ros_rate
+        self.pos_x_pid.setpoint = setpoint[0]
+        self.pos_y_pid.setpoint = setpoint[1]
         self.pos_x_pid.Kp = self.pid_P
         self.pos_x_pid.Ki = self.pid_I
         self.pos_x_pid.Kd = self.pid_D
         self.pos_y_pid.Kp = self.pid_P
         self.pos_y_pid.Ki = self.pid_I
         self.pos_y_pid.Kd = self.pid_D
+
+        # rospy.loginfo(f"update_pid_params: {self.pos_x_pid}")
+
         self.pos_x_pid.reset()
         self.pos_y_pid.reset()
-        self.xy_seperate_I_threshold = [
-            config["x_seperate_I_threshold"],
-            config["y_seperate_I_threshold"],
-        ]
-        return config
 
     def markerPoseCb(self, msg: MarkerInfoList):
         for markerInfo in msg.markerInfoList:
@@ -167,10 +189,13 @@ class manipulater:
             return resp
 
         elif req.mode == TrimerworkRequest.Place:
-            resp = self.place_cube(rate, False)
+            resp = self.place_cube(rate, 1)
             return resp
-        elif req.mode == TrimerworkRequest.PlaceHighly:
-            resp = self.place_cube(rate, True)
+        elif req.mode == TrimerworkRequest.PlaceSecondLayer:
+            resp = self.place_cube(rate, 2)
+            return resp
+        elif req.mode == TrimerworkRequest.PlaceThirdLayer:
+            resp = self.place_cube(rate, 3)
             return resp
 
     def grasp_cube(self, rate):
@@ -181,10 +206,8 @@ class manipulater:
         self.open_gripper()
         rospy.sleep(0.1)
         resp = graspsignalResponse()
-        self.pos_x_pid.reset()
-        self.pos_y_pid.reset()
 
-        not_update_cnt = 0
+        self.update_pid_params(self.desired_cube_pos_in_cam)
 
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
@@ -195,17 +218,11 @@ class manipulater:
                 target_marker_pose
             )
 
-            # if np.linalg.norm(target_pos - self.target_pos_old) < 0.001:
-            #     if not_update_cnt > 60:
-            #         rospy.loginfo("target_pos is not updated")
-            #         resp.res = False
-            #         return resp
-            #     not_update_cnt += 1
-            # else:
-            #     not_update_cnt = 0
             self.target_pos_old = target_pos
 
-            if self.is_near_desired_position(target_pos):
+            if self.is_near_desired_position(
+                target_pos, self.desired_cube_pos_in_cam, self.cube_goal_tolerance
+            ):
                 self.sendBaseVel([0.25, 0.0, 0.0])
                 rospy.sleep(0.3)
                 self.sendBaseVel([0.0, 0.0, 0.0])
@@ -230,21 +247,23 @@ class manipulater:
                 resp.response = str(target_angle)
                 break
             else:
-                self.cal_cmd_vel_pid(target_pos)
+                self.cal_cmd_vel_pid(target_pos, self.desired_cube_pos_in_cam)
 
             rate.sleep()
         return resp
 
-    def place_cube(self, rate, should_place_highly=False):
+    def place_cube(self, rate, place_layer: int = 1):
         self.sendBaseVel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         rospy.loginfo("First trim then place")
-        if should_place_highly:
-            self.arm_place_highly_pos()
-        else:
+        if place_layer == 1:
             self.arm_place_pos()
-        self.pos_x_pid.reset()
-        self.pos_y_pid.reset()
+        elif place_layer == 2:
+            self.arm_place_pos_sec_layer()
+        else:
+            self.arm_place_pos_third_layer()
+
+        self.update_pid_params(self.desired_tag_pos_in_cam)
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
@@ -253,15 +272,11 @@ class manipulater:
             target_pos, target_angle = self.getTargetPosAndAngleInBaseLinkFrame(
                 target_marker_pose
             )
-            if self.is_near_desired_position(target_pos):
+            if self.is_near_desired_position(
+                target_pos, self.desired_tag_pos_in_cam, self.tag_goal_tolerance
+            ):
                 rospy.loginfo("Trim well in the all dimention, going open loop")
-                self.sendBaseVel([0.0, 0.0, 0.0])
-                rospy.sleep(1.0)
-                self.sendBaseVel([0.2, 0.0, 0.0])
-                rospy.sleep(0.2)
-                self.sendBaseVel([0.2, 0.0, 0.0])
-                rospy.sleep(0.2)
-                self.sendBaseVel([0.0, 0.0, 0.0])
+
                 rospy.loginfo("Place: reach the goal for placing.")
 
                 rospy.loginfo("Trim well in the horizon dimention")
@@ -273,8 +288,7 @@ class manipulater:
                 rospy.sleep(1.0)
                 self.open_gripper()
                 rospy.sleep(1.0)
-                reset_thread = threading.Thread(target=self.arm_reset)
-                reset_thread.start()
+                self.arm_reset()
 
                 self.sendBaseVel([-0.3, 0.0, 0.0])
                 rospy.sleep(0.6)
@@ -286,32 +300,27 @@ class manipulater:
                 break
 
             else:
-                self.cal_cmd_vel_pid(target_pos)
+                self.cal_cmd_vel_pid(target_pos, self.desired_tag_pos_in_cam)
 
             rate.sleep()
         return resp
 
-    def is_near_desired_position(self, target_pos):
-        return (
-            abs(target_pos[0] - self.desired_cube_pos_in_cam[0]) <= self.xy_goal_tolerance[0]
-            and abs(target_pos[1] - self.desired_cube_pos_in_cam[1]) <= self.xy_goal_tolerance[1]
-        )
+    def is_near_desired_position(
+        self, target_pos: list, desired_pos: list, tolerance: list
+    ):
+        x_diff_satisfy = abs(target_pos[0] - desired_pos[0]) <= tolerance[0]
+        y_diff_satisfy = abs(target_pos[1] - desired_pos[1]) <= tolerance[1]
+        return x_diff_satisfy and y_diff_satisfy
 
-    def cal_cmd_vel_pid(self, target_pos):
+    def cal_cmd_vel_pid(self, target_pos, desired_pos: list):
         cmd_vel = [0.0, 0.0, 0.0]
 
-        if (
-            abs(target_pos[0] - self.desired_cube_pos_in_cam[0])
-            < self.xy_seperate_I_threshold[0]
-        ):
+        if abs(target_pos[0] - desired_pos[0]) < self.xy_seperate_I_threshold[0]:
             self.pos_x_pid.Ki = self.pid_I
         else:
             self.pos_x_pid.Ki = 0.0
 
-        if (
-            abs(target_pos[1] - self.desired_cube_pos_in_cam[1])
-            < self.xy_seperate_I_threshold[1]
-        ):
+        if abs(target_pos[1] - desired_pos[1]) < self.xy_seperate_I_threshold[1]:
             self.pos_y_pid.Ki = self.pid_I
         else:
             self.pos_y_pid.Ki = 0.0
@@ -372,14 +381,21 @@ class manipulater:
         rospy.loginfo("<manipulater>: now prepare to grip")
         pose = Pose()
         pose.position.x = 0.21
-        pose.position.y = -0.02
+        pose.position.y = -0.04
         self.arm_position_pub.publish(pose)
 
-    def arm_place_highly_pos(self):
+    def arm_place_pos_sec_layer(self):
         rospy.loginfo("<manipulater>: now prepare to grip")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = 0.03
+        self.arm_position_pub.publish(pose)
+
+    def arm_place_pos_third_layer(self):
+        rospy.loginfo("<manipulater>: now prepare to grip")
+        pose = Pose()
+        pose.position.x = 0.21
+        pose.position.y = 0.08
         self.arm_position_pub.publish(pose)
 
 

@@ -1,0 +1,13 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  control_frequency: 30.0
+  Kp: 4.0
+  Ki: 8.0
+  Kd: 0.0
+  desired_cube_x: 0.39
+  desired_cube_y: 0.0
+  desired_tag_x: 0.32
+  desired_tag_y: 0.0
+  x_seperate_I_threshold: 0.1
+  y_seperate_I_threshold: 0.1
+state: []

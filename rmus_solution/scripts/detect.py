@@ -3,16 +3,14 @@
 import os
 import traceback
 import cv2
-import copy
-import rospy
 import numpy as np
 
 
 def preprocessing(frame):
-    """ 
+    """
     Processing the image to get the binary image with HSV red filter
     Note:
-        Be careful while modifying HSV filter range, you may 
+        Be careful while modifying HSV filter range, you may
         need to save warped images to the training set again
     """
     hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -34,14 +32,17 @@ from simple_digits_classification.simple_digits_classify import CNN_digits
 import torch
 from torch import nn
 import torch.nn.functional as F
+
 file_path = os.path.dirname(__file__)
 model = CNN_digits(50, 50, 9)
-model.load_state_dict(torch.load(file_path + '/simple_digits_classification/model.pth'))
+model.load_state_dict(torch.load(file_path + "/simple_digits_classification/model.pth"))
 model.eval()
+
+
 def classify(image, is_white_digit=True):
-    """ 
+    """
     Input:
-        `image`: grayscale image. (h, w) 
+        `image`: grayscale image. (h, w)
         `is_white_digit`: if the digit is white on black background, set it to True, otherwise False
     Output:
         `idx`: classified result. [0, 1, 2, 3, 4, 5] => block 1-6; 6-8 => block B, O, X; -1: unknown
@@ -60,13 +61,15 @@ def classify(image, is_white_digit=True):
     return idx, logits
 
 
-def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_thresh=225):
-    """ 
+def square_detection(
+    grayImg, camera_matrix, height_range=(-10.0, 10.0), area_thresh=225
+):
+    """
     Detect warped squares (block surfaces) in grayImg
     `camera_matrix`: used to solve pnp
-    `height_range`: used to distinguish between block1-6 (no higher than +0.2m, 
+    `height_range`: used to distinguish between block1-6 (no higher than +0.2m,
         much lower when not stacked) and gameinfo board (much higher than blocks)
-        note that y axis in camera frame is downward. 
+        note that y axis in camera frame is downward.
         e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
     `area_thresh`: threshold to filter out small contours, like noise and quads far away
         set it to 50 => can detect quads 2m away but sometimes may confuse with "6" and "B"
@@ -82,12 +85,14 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
     # cv2.imshow("TEST", fillImg)
     # cv2.waitKey(0)
 
-    contours, hierarchy = cv2.findContours(grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(
+        grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+    )
     contours_filt = []
     for i, c in enumerate(contours):
         child_idx = hierarchy[0, i, 2]
         ## must have digits inside
-        if child_idx == -1: # or cv2.contourArea(contours[child_idx]) < 10:
+        if child_idx == -1:  # or cv2.contourArea(contours[child_idx]) < 10:
             continue
         if cv2.contourArea(c) < area_thresh:
             continue
@@ -96,11 +101,11 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
         # cv2.drawContours(rgbImage, [c], -1, (255, 0, 0), 3)
         # cv2.imshow("rgbImage", rgbImage)
         # cv2.waitKey(0)
-            
+
     contours = contours_filt
     for i, contour in enumerate(contours):
         x, y, w, h = cv2.boundingRect(contour)
-        if h/w > 2 or w/h > 2:
+        if h / w > 2 or w / h > 2:
             continue
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
@@ -110,7 +115,7 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
         """ warped rect found """
         quads.append(approx)
         quads_f.append(approx.astype(float))
-            
+
     rvec_list = []
     tvec_list = []
     quads_prj = []
@@ -120,20 +125,24 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
     """ block center's (0, 0, 0) """
     half_len = 0.5 * block_size
     model_object = np.array(
-       [(-half_len, -half_len, -half_len),
-        (-half_len, +half_len, -half_len),
-        (+half_len, +half_len, -half_len),
-        (+half_len, -half_len, -half_len)]
+        [
+            (-half_len, -half_len, -half_len),
+            (-half_len, +half_len, -half_len),
+            (+half_len, +half_len, -half_len),
+            (+half_len, -half_len, -half_len),
+        ]
     )
     distort_coeffs = np.array([[0, 0, 0, 0]], dtype=np.float32)
     for quad in quads_f:
         model_image = np.squeeze(quad)
         """ calculate the pose of the corner points by pnp solving """
         ret, rvec, tvec = cv2.solvePnP(
-            model_object, model_image, camera_matrix, distort_coeffs)
+            model_object, model_image, camera_matrix, distort_coeffs
+        )
         """ reconstruct corner points in image plane """
         projectedPoints, _ = cv2.projectPoints(
-            model_object, rvec, tvec, camera_matrix, distort_coeffs)
+            model_object, rvec, tvec, camera_matrix, distort_coeffs
+        )
 
         err = 0
         """ compute the reconstruction error """
@@ -149,7 +158,7 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
         """ chech if quad_height is within given height_range """
         if quad_height < height_range[0] or quad_height > height_range[1]:
             continue
-        
+
         quads_prj.append(np.round(projectedPoints).astype(int))
         rvec_list.append(rvec)
         tvec_list.append(tvec)
@@ -158,14 +167,16 @@ def square_detection(grayImg, camera_matrix, height_range=(-10.0, 10.0), area_th
 
 
 def classification_cnn(grayImg, quads):
-    """ use cnn to classify the digit, works better than template matching """
+    """use cnn to classify the digit, works better than template matching"""
     quads_ID = []
     warped_img_list = []
 
     for i in range(len(quads)):
         src = quads[i].astype(np.float32)
         l = 50
-        dst = np.array([[0, 0], [0, l-1], [l-1, l-1], [l-1, 0]], dtype=np.float32)
+        dst = np.array(
+            [[0, 0], [0, l - 1], [l - 1, l - 1], [l - 1, 0]], dtype=np.float32
+        )
         M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
         warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
         ## save warped image
@@ -192,9 +203,9 @@ def marker_detection(
     """
     detect markers and poses of quads in RGB image `frame`
     Input:
-        `height_range`: used to distinguish between block1-6 (no higher than +0.2m, 
+        `height_range`: used to distinguish between block1-6 (no higher than +0.2m,
             much lower when not stacked) and gameinfo board (much higher than blocks)
-            note that y axis in camera frame is downward. 
+            note that y axis in camera frame is downward.
             e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
         exchange_station: if True, mask the lower part of the image to detect gameinfo board.
             can be a substitute of `height_range` to detect gameinfo board.
@@ -204,12 +215,24 @@ def marker_detection(
     if exchange_station:
         height_range = (-10, -0.2)
     boolImg, _ = preprocessing(frame)
-    
+
     quads, tvec_list, rvec_list, area_list, _ = square_detection(
-        boolImg, camera_matrix, height_range=height_range, area_thresh=300)
+        boolImg, camera_matrix, height_range=height_range, area_thresh=300
+    )
     quads_id, warpped_img_list = classification_cnn(boolImg, quads)
     if verbose:
-        id2tag = {0: "*", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "B", 8: "O", 9: "X"}
+        id2tag = {
+            0: "*",
+            1: "1",
+            2: "2",
+            3: "3",
+            4: "4",
+            5: "5",
+            6: "6",
+            7: "B",
+            8: "O",
+            9: "X",
+        }
         for i in range(len(quads)):
             bbox = cv2.boundingRect(quads[i])
             try:
