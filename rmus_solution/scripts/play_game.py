@@ -94,7 +94,7 @@ class gamecore:
     def classify_block(self, blockinfo_list: MarkerInfoList):
         blockinfo: MarkerInfo
         for blockinfo in blockinfo_list.markerInfoList:
-            if 1 <= blockinfo.id <= 6 and blockinfo.in_cam:
+            if 1 <= blockinfo.id <= 6:
                 mining_area_id = self.check_near_mining_area(blockinfo.gpose.position)
                 self.block_mining_area[blockinfo.id] = mining_area_id
         # print(self.block_mining_area)
