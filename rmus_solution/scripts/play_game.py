@@ -48,7 +48,6 @@ class gamecore:
         self.observing = True          ## if self.observing == True, classify the block to mining areas
 
         """ gamecore logic: """
-        # self.test_navigation()
         self.observation()
         self.grasp_and_place()
         self.navigation_result = self.navigation(PointName.Park, "")
@@ -125,63 +124,64 @@ class gamecore:
         return mining_area_id
         ...
 
-    def test_navigation(self):
-        self.response = self.img_switch_mode(ModeRequese.DoNothing)
-        for i in range(0, 3):
-            self.navigation_result = self.navigation(
-                PointName.MiningArea_0_Vp_1 + i, ""
-            )
-            for j, target in enumerate(self.gameinfo.data):
-                if j < i:
-                    continue
-                self.response = self.img_switch_mode(target)
-                aligner_response: graspsignalResponse = self.aligner(
-                    AlignerworkRequest.Grasp, ""
-                )
-                if aligner_response.res == True:
-                    if aligner_response.response == "Successfully Grasp fake":
-                        continue
-                    else:
-                        break
+    def go_get_block(self, block_id: int):
+        area_idx = self.block_mining_area[block_id]
+        if area_idx == -1:
+            rospy.logwarn(f"block {block_id} is not in the mining area")
+            return False
+        navi_areas = [PointName.MiningArea_0_Vp_2, PointName.MiningArea_1_Vp_2, PointName.MiningArea_2_Vp_1]
+        dest = navi_areas[area_idx]
+        print(f"fetching block {target} from area No.{area_idx}")
+        self.navigation_result = self.navigation(dest, "")
+        self.align_res = self.aligner(AlignerworkRequest.Grasp, target, "")
+        return align_res
 
-            self.response = self.img_switch_mode(ModeRequese.DoNothing)
-            self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.response = self.img_switch_mode(ModeRequese.B + i)
+    def stack(self):
+        """ stack above highest block in sight """
+        if self.blockinfo_list is None or len(self.blockinfo_list.markerInfoList) == 0:
+            return
+        block_list = [blockinfo for blockinfo in self.blockinfo_list.markerInfoList if blockinfo.in_cam]
+        ## frame "map" x,y,z points forwards, right and upwards respectively
+        block_list.sort(key=lambda blockinfo: blockinfo.gpose.position.z, reverse=True)
+        highest_block = block_list[0]
+        height = highest_block.gpose.position.z
+        print(f"highest block id: {highest_block.id}, gpose height: {height}")
+        import pdb; pdb.set_trace()
+        ## blocks in first layer is 0.035m above the base
+        height_base = 0.035
+        block_size = 0.05
+        layers = round((height - height_base) / block_size)
+        self.align_res = self.aligner(AlignerworkRequest.Place + layers, highest_block.id, "")
+        ## TODO: failure logic
+        return
 
-            aligner_response = self.aligner(AlignerworkRequest.Place, "")
-
-            self.response = self.img_switch_mode(ModeRequese.DoNothing)
-        self.navigation_result = self.navigation(PointName.Park, "")
-        self.response = self.img_switch_mode(ModeRequese.DoNothing)
-        ...
-
+    def check_stacked_blocks(self):
+        pass
+    
     def grasp_and_place(self):
         print("----------grasping three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
             print(f"----------grasping No.{i} block(id={target})----------")
-            mining_area_id = self.block_mining_area[target]
-            rospy.loginfo(f"target: {target}, mining_area_id: {mining_area_id}")
-            if mining_area_id == 0:
-                self.navigation_result = self.navigation(
-                    PointName.MiningArea_0_Vp_2, ""
-                )
-            elif mining_area_id == 1:
-                self.navigation_result = self.navigation(
-                    PointName.MiningArea_1_Vp_2, ""
-                )
-            elif mining_area_id == 2:
-                self.navigation_result = self.navigation(
-                    PointName.MiningArea_2_Vp_1, ""
-                )
-            else:
-                rospy.logwarn(f"Block {target} is not in any mining area.")
+            done = self.go_get_block(target)
+            if not done:
+                ## TODO: failure logic
                 continue
-            self.align_res = self.aligner(AlignerworkRequest.Grasp, target, "")
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
             self.align_res = self.aligner(AlignerworkRequest.Place, 7 + i, "")
             print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
-        
+        print(f"stacking the rest of the blocks: {blocks_left}")
+        blocks_left = [i for i in range(1, 6+1) if i not in self.gameinfo.data]
+        for i, target in enumerate(blocks_left):
+            print(f"----------grasping No.{i} block(id={target})----------")
+            done = self.go_get_block(target)
+            if not done:
+                ## TODO: failure logic
+                continue
+            self.navigation_result = self.navigation(PointName.Station_2, "")
+            self.stack()
+            print(f"----------done stacking No.{i} block(id={target})----------")
+        print("----------done stacking three blocks----------")
 
 
 if __name__ == "__main__":
