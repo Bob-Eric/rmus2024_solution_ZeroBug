@@ -167,7 +167,7 @@ def square_detection(
 
 
 def classification_cnn(grayImg, quads):
-    """use cnn to classify the digit, works better than template matching"""
+    """ use cnn to classify the digit, works better than template matching """
     quads_ID = []
     warped_img_list = []
 

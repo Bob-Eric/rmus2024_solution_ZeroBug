@@ -80,11 +80,11 @@ class gamecore:
     def observation(self):
         print("----------observing----------")
         self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_1, "")
-        # self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
+        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_1, "")
-        # self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
+        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
-        # self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
         self.observation = False
         print("----------done observing----------")
 
@@ -131,10 +131,10 @@ class gamecore:
             return False
         navi_areas = [PointName.MiningArea_0_Vp_2, PointName.MiningArea_1_Vp_2, PointName.MiningArea_2_Vp_1]
         dest = navi_areas[area_idx]
-        print(f"fetching block {target} from area No.{area_idx}")
+        print(f"fetching block {block_id} from area No.{area_idx}")
         self.navigation_result = self.navigation(dest, "")
-        self.align_res = self.aligner(AlignerworkRequest.Grasp, target, "")
-        return align_res
+        self.align_res = self.aligner(AlignerworkRequest.Grasp, block_id, "")
+        return True
 
     def stack(self):
         """ stack above highest block in sight """
@@ -145,13 +145,15 @@ class gamecore:
         block_list.sort(key=lambda blockinfo: blockinfo.gpose.position.z, reverse=True)
         highest_block = block_list[0]
         height = highest_block.gpose.position.z
+
         print(f"highest block id: {highest_block.id}, gpose height: {height}")
-        import pdb; pdb.set_trace()
+
         ## blocks in first layer is 0.035m above the base
         height_base = 0.035
         block_size = 0.05
         layers = round((height - height_base) / block_size)
-        self.align_res = self.aligner(AlignerworkRequest.Place + layers, highest_block.id, "")
+        ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
+        self.align_res = self.aligner(AlignerworkRequest.PlaceFirstLayer + layers + 1, 7, "")
         ## TODO: failure logic
         return
 
@@ -167,11 +169,11 @@ class gamecore:
                 ## TODO: failure logic
                 continue
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.align_res = self.aligner(AlignerworkRequest.Place, 7 + i, "")
+            self.align_res = self.aligner(AlignerworkRequest.PlaceFirstLayer, 7 + i, "")
             print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
-        print(f"stacking the rest of the blocks: {blocks_left}")
         blocks_left = [i for i in range(1, 6+1) if i not in self.gameinfo.data]
+        print(f"stacking the rest of the blocks: {blocks_left}")
         for i, target in enumerate(blocks_left):
             print(f"----------grasping No.{i} block(id={target})----------")
             done = self.go_get_block(target)

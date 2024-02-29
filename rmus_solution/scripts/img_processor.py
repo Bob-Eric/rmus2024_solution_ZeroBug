@@ -202,7 +202,6 @@ class Processor:
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
                 ## Assumption: block's not moving
-                ## TODO: test if it's working when lose target temporarily
                 gpose = self.blocks_info[i][1]
                 gpose_stamp = tf2_geometry_msgs.PoseStamped()
                 gpose_stamp.header.stamp = rospy.Time.now()
