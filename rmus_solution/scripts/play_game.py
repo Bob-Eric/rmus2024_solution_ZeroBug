@@ -45,7 +45,9 @@ class gamecore:
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
 
         """ gamecore state params: """
-        self.observing = True          ## if self.observing == True, classify the block to mining areas
+        self.observing = (
+            True  ## if self.observing == True, classify the block to mining areas
+        )
 
         """ gamecore logic: """
         self.observation()
@@ -129,7 +131,11 @@ class gamecore:
         if area_idx == -1:
             rospy.logwarn(f"block {block_id} is not in the mining area")
             return False
-        navi_areas = [PointName.MiningArea_0_Vp_2, PointName.MiningArea_1_Vp_2, PointName.MiningArea_2_Vp_1]
+        navi_areas = [
+            PointName.MiningArea_0_Vp_2,
+            PointName.MiningArea_1_Vp_2,
+            PointName.MiningArea_2_Vp_1,
+        ]
         dest = navi_areas[area_idx]
         print(f"fetching block {block_id} from area No.{area_idx}")
         self.navigation_result = self.navigation(dest, "")
@@ -137,10 +143,14 @@ class gamecore:
         return True
 
     def stack(self):
-        """ stack above highest block in sight """
+        """stack above highest block in sight"""
         if self.blockinfo_list is None or len(self.blockinfo_list.markerInfoList) == 0:
             return
-        block_list = [blockinfo for blockinfo in self.blockinfo_list.markerInfoList if blockinfo.in_cam]
+        block_list = [
+            blockinfo
+            for blockinfo in self.blockinfo_list.markerInfoList
+            if blockinfo.in_cam
+        ]
         ## frame "map" x,y,z points forwards, right and upwards respectively
         block_list.sort(key=lambda blockinfo: blockinfo.gpose.position.z, reverse=True)
         highest_block = block_list[0]
@@ -153,13 +163,15 @@ class gamecore:
         block_size = 0.05
         layers = round((height - height_base) / block_size)
         ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
-        self.align_res = self.aligner(AlignerworkRequest.PlaceFirstLayer + layers + 1, 7, "")
+        self.align_res = self.aligner(
+            AlignerworkRequest.PlaceFirstLayer + layers + 1, 7, ""
+        )
         ## TODO: failure logic
         return
 
     def check_stacked_blocks(self):
         pass
-    
+
     def grasp_and_place(self):
         print("----------grasping three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
@@ -172,7 +184,7 @@ class gamecore:
             self.align_res = self.aligner(AlignerworkRequest.PlaceFirstLayer, 7 + i, "")
             print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
-        blocks_left = [i for i in range(1, 6+1) if i not in self.gameinfo.data]
+        blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
         print(f"stacking the rest of the blocks: {blocks_left}")
         for i, target in enumerate(blocks_left):
             print(f"----------grasping No.{i} block(id={target})----------")
