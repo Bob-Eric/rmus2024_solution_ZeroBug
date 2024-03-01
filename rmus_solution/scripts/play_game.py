@@ -144,7 +144,7 @@ class gamecore:
         self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
         return True
 
-    def stack(self):
+    def stack(self, count: int):
         """stack above highest block in sight"""
         if self.blockinfo_list is None or len(self.blockinfo_list.markerInfoList) == 0:
             return
@@ -164,8 +164,12 @@ class gamecore:
         height_base = 0.035
         block_size = 0.05
         layers = round((height - height_base) / block_size)
-        ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
-        self.align_res = self.aligner(AlignRequest.Place, 7, 1 + layers + 1)
+        if count >= 2:
+            # only stack three layers, the last block is stack on the right to avoid falling
+            self.align_res = self.aligner(AlignRequest.Place, 9, 2)
+        else:
+            ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
+            self.align_res = self.aligner(AlignRequest.Place, 7, 1 + layers + 1)
         ## TODO: failure logic
         return
 
@@ -193,7 +197,7 @@ class gamecore:
                 ## TODO: failure logic
                 continue
             self.navigation_result = self.navigation(PointName.Station_2, "")
-            self.stack()
+            self.stack(i)
             print(f"----------done stacking No.{i} block(id={target})----------")
         print("----------done stacking three blocks----------")
 
