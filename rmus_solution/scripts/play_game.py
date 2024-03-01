@@ -82,11 +82,11 @@ class gamecore:
     def observation(self):
         print("----------observing----------")
         self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        # self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
         self.observation = False
         print("----------done observing----------")
 
@@ -172,17 +172,17 @@ class gamecore:
 
     def grasp_and_place(self):
         print("----------grasping three basic blocks----------")
-        for i, target in enumerate(self.gameinfo.data):
-            print(f"----------grasping No.{i} block(id={target})----------")
-            done = self.go_get_block(target)
-            if not done:
-                ## TODO: failure logic
-                continue
-            self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.align_res = self.aligner(AlignRequest.Place, 7 + i, 1)
-            print(f"----------done grasping No.{i} block(id={target})----------")
+        # for i, target in enumerate(self.gameinfo.data):
+        #     print(f"----------grasping No.{i} block(id={target})----------")
+        #     done = self.go_get_block(target)
+        #     if not done:
+        #         ## TODO: failure logic
+        #         continue
+        #     self.navigation_result = self.navigation(PointName.Station_1 + i, "")
+        #     self.align_res = self.aligner(AlignRequest.Place, 7 + i, 1)
+        #     print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
-        blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
+        blocks_left = range(1, 6 + 1)
         print(f"stacking the rest of the blocks: {blocks_left}")
         for i, target in enumerate(blocks_left):
             print(f"----------grasping No.{i} block(id={target})----------")
@@ -190,7 +190,7 @@ class gamecore:
             if not done:
                 ## TODO: failure logic
                 continue
-            self.navigation_result = self.navigation(PointName.Station_2, "")
+            self.navigation_result = self.navigation(PointName.Station_1, "")
             self.stack()
             print(f"----------done stacking No.{i} block(id={target})----------")
         print("----------done stacking three blocks----------")

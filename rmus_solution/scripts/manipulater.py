@@ -29,8 +29,10 @@ class ErrorCode(IntEnum):
     Latency = 1
     # Marker ID is invalid
     InvalidMarkerID = 2
+    # Layer is invalid
+    InvalidLayer = 3
     # Robot is stuck during the movement
-    Stuck = 3
+    Stuck = 4
     # Target is too far away, cannot grasp/place just by pid control
     TargetTooFaraway = 5
     # Gripper is failed to grasp the cube, maybe the esitmated position is wrong
@@ -55,8 +57,7 @@ class manipulater:
 
         self.align_marker_id = 0
 
-        self.cube_goal_tolerance = [0.01, 0.01]
-        self.tag_goal_tolerance = [0.01, 0.01]
+        self.tag_goal_tolerance = [0.005, 0.005]
 
         # TODO: update the dynamic params config
         ############### Dynamic params ###############
@@ -259,7 +260,12 @@ class manipulater:
 
         self.update_pid_params(self.desired_cube_pos_in_cam)
         cube_faraway_cnt = 0
+        output_x = 0.0
+        output_y = 0.0
         while not rospy.is_shutdown():
+            if rospy.get_time() - self.marker_time_now > 0.1:
+                rospy.logwarn("latency detected!")
+                continue
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
                 continue
@@ -274,7 +280,11 @@ class manipulater:
                 cube_in_base_link_pos[2] - 0.055,
             ]
 
-            if self.check_grasp_possibility(desired_grasp_pos):
+            if (
+                self.check_grasp_possibility(desired_grasp_pos)
+                and abs(output_x) < 0.1
+                and abs(output_y) < 0.1
+            ):
                 print(
                     f"Near desired pos, cube_in_base_link_pos: {cube_in_base_link_pos}, desired_grasp_pos: {desired_grasp_pos}"
                 )
@@ -297,34 +307,41 @@ class manipulater:
                     resp.error_code = ErrorCode.Fail
 
                 break
-            elif self.is_target_pos_faraway(desired_grasp_pos):
+            elif self.target_pos_not_too_faraway(desired_grasp_pos):
                 if not self.movement_process(
-                    resp, cube_in_base_link_pos, self.desired_cube_pos_in_cam
+                    resp,
+                    cube_in_base_link_pos,
+                    self.desired_cube_pos_in_cam,
+                    False,
+                    output_x,
+                    output_y,
                 ):
                     break
-
-            elif cube_faraway_cnt > 30:
+            else:
                 cube_faraway_cnt += 1
-                rospy.logwarn("Cube is too far away, cannot grasp just by pid control")
-                resp.res = False
-                error_msg = "Cube is faraway, cannot grasp just by pid control"
-                resp.response = "Cube is faraway, cannot grasp just by pid control"
-                rospy.logwarn(error_msg)
-                resp.error_code = ErrorCode.TargetTooFaraway
-                self.send_vel([0.0, 0.0, 0.0])
-                rospy.sleep(0.5)
-                break
+                if cube_faraway_cnt > 30:
+                    rospy.logwarn(
+                        "Cube is too far away, cannot grasp just by pid control"
+                    )
+                    resp.res = False
+                    error_msg = "Cube is faraway, cannot grasp just by pid control"
+                    resp.response = "Cube is faraway, cannot grasp just by pid control"
+                    rospy.logwarn(error_msg)
+                    resp.error_code = ErrorCode.TargetTooFaraway
+                    self.send_vel([0.0, 0.0, 0.0])
+                    rospy.sleep(0.5)
+                    break
 
             rate.sleep()
         return resp
 
-    def is_target_pos_faraway(self, desired_grasp_pos):
-        return desired_grasp_pos[0] > -0.5 and abs(desired_grasp_pos[1]) < 3.0
+    def target_pos_not_too_faraway(self, desired_grasp_pos):
+        return desired_grasp_pos[0] >= -0.5 and abs(desired_grasp_pos[1]) <= 2.0
 
     def check_grasp_possibility(self, desired_grasp_pos: list):
         if desired_grasp_pos is None:
             return False
-        elif abs(desired_grasp_pos[1]) > 0.075:
+        elif abs(desired_grasp_pos[1]) > 0.025:
             return False
         elif 0.18 <= desired_grasp_pos[0] <= 0.22 and desired_grasp_pos[2] >= -0.10:
             return True
@@ -336,7 +353,7 @@ class manipulater:
     def grasp_process(self, desired_grasp_pos: list):
         self.send_vel([0.0, 0.0, 0.0])
         self.arm_grasp_pos(desired_grasp_pos)
-        rospy.sleep(0.5)
+        rospy.sleep(1.0)
         rospy.loginfo("Place: reach the goal for placing.")
 
         self.gripper_close()
@@ -375,11 +392,24 @@ class manipulater:
         self.send_vel([0.0, 0.0, 0.0])
         rospy.loginfo("First align then place")
         # TODO: Test whether need to wait for the arm to be stable
-        # self.arm_place_pos(3)
-        self.arm_place_pos(place_layer)
+        if 1 <= place_layer <= 4:
+            self.arm_place_pos(place_layer)
+        else:
+            error_msg = "Invalid layer"
+            rospy.logwarn(error_msg)
+            resp.res = False
+            resp.response = error_msg
+            resp.error_code = ErrorCode.InvalidLayer
+            return resp
         rospy.sleep(1.0)
 
+        align_y_finisned = False
+        first_align_xy = True
         while not rospy.is_shutdown():
+            if rospy.get_time() - self.marker_time_now > 0.1:
+                rospy.logwarn("latency detected!")
+                continue
+
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
                 continue
@@ -399,8 +429,36 @@ class manipulater:
                 resp.error_code = ErrorCode.Success
                 break
 
-            elif self.is_target_pos_faraway(target_pos):
-                if not self.movement_process(resp, target_pos, set_point):
+            elif self.target_pos_not_too_faraway(target_pos):
+                can_move = True
+
+                if not align_y_finisned:
+                    # align y
+                    output_y = 0.0
+                    can_move = self.movement_process(
+                        resp, target_pos, set_point, True, output_y=output_y
+                    )
+                    align_y_finisned = (
+                        self.is_near_desired_position(
+                            [0, target_pos[1]],
+                            [0, self.pos_y_pid.setpoint],
+                            self.tag_goal_tolerance,
+                        )
+                        and abs(output_y) < 0.1
+                    )
+                # First align y, then align x
+
+                else:
+                    # y is aligned, then align both of x and y
+                    if first_align_xy:
+                        # reset x pid
+                        self.pos_x_pid.reset()
+                        first_align_xy = False
+                        self.send_vel([0.0, 0.0, 0.0])
+                        rospy.sleep(0.5)
+                    can_move = self.movement_process(resp, target_pos, set_point, False)
+
+                if not can_move:
                     break
             else:
                 rospy.logwarn(
@@ -418,8 +476,18 @@ class manipulater:
         return resp
 
     # return False if stuck
-    def movement_process(self, resp, measured_pos: list, set_pos: list):
+    def movement_process(
+        self,
+        resp,
+        measured_pos: list,
+        set_pos: list,
+        only_move_y=False,
+        output_x=0.0,
+        output_y=0.0,
+    ):
         output_x, output_y = self.cal_pid_val(measured_pos, set_pos)
+
+        output_x = 0.0 if only_move_y else output_x
 
         # only check stuck when the output is not zero
         output_x_near_zero = abs(output_x) <= 0.2
@@ -548,12 +616,13 @@ class manipulater:
         rospy.loginfo("now prepare to place (first layer)")
         pose = Pose()
         pose.position.x = 0.21
-        if layer == 1:
-            pose.position.y = -0.04
-        elif layer == 2:
-            pose.position.y = 0.03
-        elif layer == 3:
-            pose.position.y = 0.08
+        pose.position.y = -0.04 + 0.055 * (layer - 1)
+        # if layer == 1:
+        #     pose.position.y = -0.04
+        # elif layer == 2:
+        #     pose.position.y = 0.03
+        # elif layer == 3:
+        #     pose.position.y = 0.08
         self.arm_position_pub.publish(pose)
 
 

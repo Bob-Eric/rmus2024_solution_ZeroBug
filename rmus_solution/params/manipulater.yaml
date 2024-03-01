@@ -9,5 +9,5 @@ dictitems:
   desired_tag_x: 0.32
   desired_tag_y: 0.0
   x_seperate_I_threshold: 0.1
-  y_seperate_I_threshold: 0.1
+  y_seperate_I_threshold: 0.2
 state: []
