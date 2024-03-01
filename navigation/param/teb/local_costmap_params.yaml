@@ -22,5 +22,5 @@ local_costmap:
   inflation_layer:
     enabled: true
     cost_scaling_factor: 5.0 # a small value is preferred
-    inflation_radius: 0.3 # a small value is preferred
+    inflation_radius: 0.25 # a small value is preferred
 
