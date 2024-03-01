@@ -4,7 +4,7 @@ dictitems:
   Kp: 4.0
   Ki: 8.0
   Kd: 0.0
-  desired_cube_x: 0.335
+  desired_cube_x: 0.345
   desired_cube_y: 0.0
   desired_tag_x: 0.32
   desired_tag_y: 0.0
