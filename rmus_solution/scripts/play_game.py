@@ -4,7 +4,7 @@
 import rospy
 from std_msgs.msg import UInt8MultiArray
 from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
-from manipulater import AlignerworkRequest
+from manipulater import AlignRequest
 from navi_control import PointName, router
 from img_processor import ModeRequese
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
@@ -26,7 +26,7 @@ class gamecore:
         )
         rospy.sleep(1)
 
-        self.align_res = self.aligner(AlignerworkRequest.Reset, 0, "")
+        self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation_result = self.navigation(PointName.Noticeboard, "")
 
@@ -139,7 +139,7 @@ class gamecore:
         dest = navi_areas[area_idx]
         print(f"fetching block {block_id} from area No.{area_idx}")
         self.navigation_result = self.navigation(dest, "")
-        self.align_res = self.aligner(AlignerworkRequest.Grasp, block_id, "")
+        self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
         return True
 
     def stack(self):
@@ -163,9 +163,7 @@ class gamecore:
         block_size = 0.05
         layers = round((height - height_base) / block_size)
         ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
-        self.align_res = self.aligner(
-            AlignerworkRequest.PlaceFirstLayer + layers + 1, 7, ""
-        )
+        self.align_res = self.aligner(AlignRequest.Place, 7, 1 + layers + 1)
         ## TODO: failure logic
         return
 
@@ -181,7 +179,7 @@ class gamecore:
                 ## TODO: failure logic
                 continue
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.align_res = self.aligner(AlignerworkRequest.PlaceFirstLayer, 7 + i, "")
+            self.align_res = self.aligner(AlignRequest.Place, 7 + i, 1)
             print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
         blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]

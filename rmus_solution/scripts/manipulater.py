@@ -17,15 +17,24 @@ from enum import IntEnum
 from rmus_solution.msg import MarkerInfo
 
 
-class AlignerworkRequest(IntEnum):
+class AlignRequest(IntEnum):
     Reset = 0
     Grasp = 1
-    PlaceFirstLayer = 2
-    PlaceSecondLayer = 3
-    PlaceThirdLayer = 4
+    Place = 2
 
 
-# TODO: Make an enum for error code
+class ErrorCode(IntEnum):
+    Success = 0
+    # Marker info is too old, latency detected
+    Latency = 1
+    # Marker ID is invalid
+    InvalidMarkerID = 2
+    # Robot is stuck during the movement
+    Stuck = 3
+    # Target is too far away, cannot grasp/place just by pid control
+    TargetTooFaraway = 5
+    # Gripper is failed to grasp the cube, maybe the esitmated position is wrong
+    Fail = 6
 
 
 class manipulater:
@@ -42,7 +51,7 @@ class manipulater:
         self.current_marker_poses = Pose()
         self.gripper_state = -1
         self.gripper_state_old = -1
-        self.image_time_now = 0.0
+        self.marker_time_now = 0.0
 
         self.align_marker_id = 0
 
@@ -132,7 +141,7 @@ class manipulater:
             markerInfo: MarkerInfo
             if markerInfo.id == self.align_marker_id:
                 self.current_marker_poses = markerInfo.pose
-                self.image_time_now = rospy.get_time()
+                self.marker_time_now = rospy.get_time()
 
         # ############### Test ###############
         # self.check_stuck()
@@ -185,13 +194,13 @@ class manipulater:
     def AlignerworkCallback(self, req: graspsignalRequest):
         self.align_marker_id = req.marker_id
         # Reset the arm
-        if req.mode == AlignerworkRequest.Reset:
+        if req.mode == AlignRequest.Reset:
             resp = self.reset_resp()
             return resp
 
-        # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
+        # If marker_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
-        while rospy.get_time() - self.image_time_now > 0.1:
+        while rospy.get_time() - self.marker_time_now > 0.1:
             rospy.loginfo("latency detected!")
 
             # Go back for 0.5s
@@ -201,21 +210,24 @@ class manipulater:
                 self.send_vel([0.0, 0.0, 0.0])
             if rospy.get_time() - initial_time > 2.0:
                 resp = graspsignalResponse()
-                resp.res = True
-                resp.response = "Successfully Grasp fake"
+                resp.res = False
+                error_msg = "Can't get the marker info in time"
+                resp.response = error_msg
+                rospy.logwarn(error_msg)
+                resp.error_code = ErrorCode.Latency
                 return resp
             rospy.sleep(0.1)
 
         rate = rospy.Rate(self.ros_rate)
 
-        if req.mode == AlignerworkRequest.Grasp:
+        if req.mode == AlignRequest.Grasp:
             resp = self.grasp_resp(rate, self.align_marker_id)
             return resp
 
         else:
             resp = self.place_resp(
                 rate,
-                1 + req.mode - AlignerworkRequest.PlaceFirstLayer,
+                req.layer,
                 self.align_marker_id,
             )
             return resp
@@ -227,6 +239,7 @@ class manipulater:
         resp = graspsignalResponse()
         resp.res = True
         resp.response = "reset arm position and open gripper"
+        resp.error_code = ErrorCode.Success
         return resp
 
     def grasp_resp(self, rate, desired_marker_id):
@@ -234,7 +247,10 @@ class manipulater:
         if not 1 <= desired_marker_id <= 6:
             rospy.logwarn(f"Invalid marker_id: {desired_marker_id}")
             resp.res = False
-            resp.response = "Invalid marker_id"
+            error_msg = "Invalid marker_id"
+            resp.response = error_msg
+            rospy.logwarn(error_msg)
+            resp.error_code = ErrorCode.InvalidMarkerID
             return resp
         rospy.loginfo("First align then grasp")
         rospy.loginfo("align to the right place")
@@ -242,7 +258,7 @@ class manipulater:
         self.gripper_open()
 
         self.update_pid_params(self.desired_cube_pos_in_cam)
-
+        cube_faraway_cnt = 0
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
             if target_marker_pose is None:
@@ -271,26 +287,39 @@ class manipulater:
                     rospy.loginfo("Successfully Grasp")
                     resp.res = True
                     resp.response = "Successfully Grasp"
+                    resp.error_code = ErrorCode.Success
                 else:
                     rospy.logwarn("Fail to grasp")
                     resp.res = False
-                    resp.response = "Fail to grasp"
+                    error_msg = "Fail to grasp"
+                    resp.response = error_msg
+                    rospy.logwarn(error_msg)
+                    resp.error_code = ErrorCode.Fail
 
                 break
-            elif desired_grasp_pos[0] > -0.1:
+            elif self.is_target_pos_faraway(desired_grasp_pos):
                 if not self.movement_process(
                     resp, cube_in_base_link_pos, self.desired_cube_pos_in_cam
                 ):
                     break
 
-            else:
-                rospy.logwarn("Cube is behind the robot, cannot grasp")
+            elif cube_faraway_cnt > 30:
+                cube_faraway_cnt += 1
+                rospy.logwarn("Cube is too far away, cannot grasp just by pid control")
                 resp.res = False
-                resp.response = "Cube is behind the robot, cannot grasp"
+                error_msg = "Cube is faraway, cannot grasp just by pid control"
+                resp.response = "Cube is faraway, cannot grasp just by pid control"
+                rospy.logwarn(error_msg)
+                resp.error_code = ErrorCode.TargetTooFaraway
+                self.send_vel([0.0, 0.0, 0.0])
+                rospy.sleep(0.5)
                 break
 
             rate.sleep()
         return resp
+
+    def is_target_pos_faraway(self, desired_grasp_pos):
+        return desired_grasp_pos[0] > -0.5 and abs(desired_grasp_pos[1]) < 3.0
 
     def check_grasp_possibility(self, desired_grasp_pos: list):
         if desired_grasp_pos is None:
@@ -327,20 +356,28 @@ class manipulater:
         if 1 <= align_marker_id <= 6:
             # TODO: Refine the cube align place
             rospy.logwarn(f"Aligning to cube now!")
-            set_point = self.desired_cube_pos_in_cam
+            set_point = [
+                self.desired_cube_pos_in_cam[0] + 0.015,
+                self.desired_cube_pos_in_cam[1],
+            ]
         elif 7 <= align_marker_id <= 9:
             set_point = self.desired_tag_pos_in_cam
         else:
-            rospy.logwarn(f"Invalid align_marker_id: {align_marker_id}")
+            rospy.logwarn(f"Invalid marker_id: {align_marker_id}")
             resp.res = False
-            resp.response = "Invalid align_marker_id"
+            error_msg = "Invalid marker_id"
+            resp.response = error_msg
+            rospy.logwarn(error_msg)
+            resp.error_code = ErrorCode.InvalidMarkerID
             return resp
 
         self.update_pid_params(set_point)
         self.send_vel([0.0, 0.0, 0.0])
         rospy.loginfo("First align then place")
         # TODO: Test whether need to wait for the arm to be stable
-        self.arm_place_pos(3)
+        # self.arm_place_pos(3)
+        self.arm_place_pos(place_layer)
+        rospy.sleep(1.0)
 
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
@@ -359,11 +396,23 @@ class manipulater:
 
                 resp.res = True
                 resp.response = "Successfully Place"
+                resp.error_code = ErrorCode.Success
                 break
 
-            else:
+            elif self.is_target_pos_faraway(target_pos):
                 if not self.movement_process(resp, target_pos, set_point):
                     break
+            else:
+                rospy.logwarn(
+                    "Marker is too far away, cannot go there just by pid control"
+                )
+                resp.res = False
+                error_msg = "Marker is faraway, cannot go there just by pid control"
+                resp.response = "Marker is faraway, cannot go there just by pid control"
+                rospy.logwarn(error_msg)
+                resp.error_code = ErrorCode.TargetTooFaraway
+                self.send_vel([0.0, 0.0, 0.0])
+                break
 
             rate.sleep()
         return resp
@@ -373,13 +422,16 @@ class manipulater:
         output_x, output_y = self.cal_pid_val(measured_pos, set_pos)
 
         # only check stuck when the output is not zero
-        output_x_near_zero = abs(output_x) <= 0.1
-        output_y_near_zero = abs(output_y) <= 0.1
+        output_x_near_zero = abs(output_x) <= 0.2
+        output_y_near_zero = abs(output_y) <= 0.2
         output_near_zero = output_x_near_zero and output_y_near_zero
 
         if not output_near_zero and self.check_stuck():
             resp.res = False
-            resp.response = "Robot is stuck, goint backward!"
+            error_msg = "Robot is stuck, goint backward!"
+            resp.response = error_msg
+            rospy.logwarn(error_msg)
+            resp.error_code = ErrorCode.Stuck
             reverse_vel_x = int(not output_x_near_zero) * -np.sign(output_x) * 0.3
             reverse_vel_y = int(not output_y_near_zero) * -np.sign(output_y) * 0.3
             self.send_vel([reverse_vel_x, reverse_vel_y, 0.0])
@@ -394,9 +446,8 @@ class manipulater:
 
     def place_process(self, place_layer: int):
         rospy.loginfo("Place: reach the goal for placing.")
-        self.arm_place_pos(place_layer)
         self.send_vel([0.0, 0.0, 0.0])
-        rospy.sleep(1.5)
+        rospy.sleep(0.5)
         self.gripper_open()
         rospy.sleep(0.5)
 
@@ -497,7 +548,12 @@ class manipulater:
         rospy.loginfo("now prepare to place (first layer)")
         pose = Pose()
         pose.position.x = 0.21
-        pose.position.y = -0.04 + 0.06 * (layer - 1)
+        if layer == 1:
+            pose.position.y = -0.04
+        elif layer == 2:
+            pose.position.y = 0.03
+        elif layer == 3:
+            pose.position.y = 0.08
         self.arm_position_pub.publish(pose)
 
 
