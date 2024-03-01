@@ -134,7 +134,7 @@ class Processor:
         assert tuple(self.detected_gameinfo) == tuple(gameinfo)
         ## publish gameinfo
         self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
-        print(gameinfo)
+        print(f"gameinfo: {gameinfo}")
         return
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
@@ -183,9 +183,8 @@ class Processor:
                     p1 = np.array((last_gpose.position.x, last_gpose.position.y, last_gpose.position.z))
                     p2 = np.array((gpose_list[idx].position.x, gpose_list[idx].position.y, gpose_list[idx].position.z))
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
-                    if np.linalg.norm(p1-p2) > 0.1:
+                    if np.linalg.norm(p1-p2) > 0.2:
                         rospy.logwarn(f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection.")
-                        continue
 
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
