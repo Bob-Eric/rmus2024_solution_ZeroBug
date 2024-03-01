@@ -1,6 +1,7 @@
 uint8 mode
 uint8 marker_id
-string call
+uint8 layer
 ---
 bool res
 string response
+uint8 error_code
