@@ -180,8 +180,20 @@ class Processor:
                 ## TODO: test if there are blocks whose gpose differs a lot from last gpose
                 if self.blocks_info[i] is not None: # and id == 7:
                     last_gpose = self.blocks_info[i][1]
-                    p1 = np.array((last_gpose.position.x, last_gpose.position.y, last_gpose.position.z))
-                    p2 = np.array((gpose_list[idx].position.x, gpose_list[idx].position.y, gpose_list[idx].position.z))
+                    p1 = np.array(
+                        (
+                            last_gpose.position.x,
+                            last_gpose.position.y,
+                            last_gpose.position.z,
+                        )
+                    )
+                    p2 = np.array(
+                        (
+                            gpose_list[idx].position.x,
+                            gpose_list[idx].position.y,
+                            gpose_list[idx].position.z,
+                        )
+                    )
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
                     if np.linalg.norm(p1-p2) > 0.2:
                         rospy.logwarn(f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection.")
