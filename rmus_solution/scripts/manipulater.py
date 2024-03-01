@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import math
+import time
 import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
@@ -95,6 +96,8 @@ class manipulater:
         self.tf_listener = tf2_ros.TransformListener(self.tfBuffer)
         self.base_link_pos_old = np.array([-1.0, -1.0])
         self.check_stuck_time_old = 0.0
+        self.movement_start_time = 0.0
+        self.movement_end_time = 0.0
 
         self.service = rospy.Service(
             "/let_manipulater_work", graspsignal, self.AlignerworkCallback
@@ -225,7 +228,7 @@ class manipulater:
             resp = self.grasp_resp(rate, self.align_marker_id)
             return resp
 
-        else:
+        elif req.mode == AlignRequest.Place:
             resp = self.place_resp(
                 rate,
                 req.layer,
@@ -282,8 +285,7 @@ class manipulater:
 
             if (
                 self.check_grasp_possibility(desired_grasp_pos)
-                and abs(output_x) < 0.1
-                and abs(output_y) < 0.1
+                and rospy.get_time() - self.movement_end_time > 0.5
             ):
                 print(
                     f"Near desired pos, cube_in_base_link_pos: {cube_in_base_link_pos}, desired_grasp_pos: {desired_grasp_pos}"
@@ -361,6 +363,10 @@ class manipulater:
 
         self.gripper_close()
         rospy.sleep(0.5)
+
+        self.gripper_close()
+        rospy.sleep(0.5)
+
         self.arm_idle_pos()
 
         self.send_vel([-0.3, 0.0, 0.0])
@@ -405,7 +411,9 @@ class manipulater:
 
         align_y_finisned = False
         first_align_xy = True
+        output_y_near_zero_time_start = 0.0
         while not rospy.is_shutdown():
+            time_start = time.time()
             if rospy.get_time() - self.marker_time_now > 0.1:
                 rospy.logwarn("latency detected!")
                 continue
@@ -415,12 +423,10 @@ class manipulater:
                 continue
 
             target_pos, target_angle = self.get_target_pos_ang_in_frame(
-                target_marker_pose
+                target_marker_pose, "base_link"
             )
             if self.is_near_desired_position(
-                target_pos,
-                [self.pos_x_pid.setpoint, self.pos_y_pid.setpoint],
-                self.tag_goal_tolerance,
+                target_pos, set_point, self.tag_goal_tolerance
             ):
                 self.place_process(place_layer)
 
@@ -431,33 +437,41 @@ class manipulater:
 
             elif self.target_pos_not_too_faraway(target_pos):
                 can_move = True
+                # ############## Test align x and y ##############
+                # can_move = self.movement_process(resp, target_pos, set_point, False)
+                # ############## Test align x and y ##############
 
+                ############## Test First align y then align both of x and y ##############
+                # First align y, then align x
                 if not align_y_finisned:
                     # align y
                     output_y = 0.0
                     can_move = self.movement_process(
                         resp, target_pos, set_point, True, output_y=output_y
                     )
-                    align_y_finisned = (
-                        self.is_near_desired_position(
-                            [0, target_pos[1]],
-                            [0, self.pos_y_pid.setpoint],
-                            self.tag_goal_tolerance,
-                        )
-                        and abs(output_y) < 0.02
-                    )
-                # First align y, then align x
-
+                    if self.is_near_desired_position(
+                        [0, target_pos[1]],
+                        [0, self.pos_y_pid.setpoint],
+                        self.tag_goal_tolerance,
+                    ):
+                        if abs(output_y) >= 0.05:
+                            output_y_near_zero_time_start = rospy.get_time()
+                        else:
+                            if rospy.get_time() - output_y_near_zero_time_start > 1.0:
+                                self.pos_y_pid.reset()
+                                self.send_vel([0.0, 0.0, 0.0])
+                                rospy.sleep(0.5)
+                                align_y_finisned = True
+                                rospy.loginfo("align y finished")
                 else:
                     # y is aligned, then align both of x and y
                     if first_align_xy:
                         # reset x pid
                         self.pos_x_pid.reset()
                         first_align_xy = False
-                        self.send_vel([0.0, 0.0, 0.0])
-                        rospy.sleep(0.5)
+                        rospy.loginfo("align x and y")
                     can_move = self.movement_process(resp, target_pos, set_point, False)
-
+                ############## Test First align y then align both of x and y ##############
                 if not can_move:
                     break
             else:
@@ -473,6 +487,9 @@ class manipulater:
                 break
 
             rate.sleep()
+
+            time_end = time.time()
+            rospy.loginfo(f"Time cost: {time_end - time_start}")
         return resp
 
     # return False if stuck
@@ -490,22 +507,32 @@ class manipulater:
         output_x = 0.0 if only_move_y else output_x
 
         # only check stuck when the output is not zero
-        output_x_near_zero = abs(output_x) <= 0.2
-        output_y_near_zero = abs(output_y) <= 0.2
+        output_x_near_zero = abs(output_x) < 0.1
+        output_y_near_zero = abs(output_y) < 0.1
         output_near_zero = output_x_near_zero and output_y_near_zero
 
-        if not output_near_zero and self.check_stuck():
-            resp.res = False
-            error_msg = "Robot is stuck, goint backward!"
-            resp.response = error_msg
-            rospy.logwarn(error_msg)
-            resp.error_code = ErrorCode.Stuck
-            reverse_vel_x = int(not output_x_near_zero) * -np.sign(output_x) * 0.3
-            reverse_vel_y = int(not output_y_near_zero) * -np.sign(output_y) * 0.3
-            self.send_vel([reverse_vel_x, reverse_vel_y, 0.0])
-            rospy.sleep(0.5)
-            self.send_vel([0.0, 0.0, 0.0])
-            return False
+        output_x_saturate = abs(output_x) > 0.2
+        output_y_saturate = abs(output_y) > 0.2
+        output_saturate = output_x_saturate or output_y_saturate
+
+        if not output_near_zero:
+            self.movement_end_time = rospy.get_time()
+
+        if not output_saturate:
+            self.movement_start_time = rospy.get_time()
+        elif rospy.get_time() - self.movement_start_time > 1.0:
+            if self.check_stuck():
+                resp.res = False
+                error_msg = "Robot is stuck, goint backward!"
+                resp.response = error_msg
+                rospy.logwarn(error_msg)
+                resp.error_code = ErrorCode.Stuck
+                reverse_vel_x = int(not output_x_near_zero) * -np.sign(output_x) * 0.3
+                reverse_vel_y = int(not output_y_near_zero) * -np.sign(output_y) * 0.3
+                self.send_vel([reverse_vel_x, reverse_vel_y, 0.0])
+                rospy.sleep(0.5)
+                self.send_vel([0.0, 0.0, 0.0])
+                return False
 
         cmd_vel = [output_x, output_y, 0.0]
         self.send_vel(cmd_vel)
@@ -617,12 +644,6 @@ class manipulater:
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = -0.04 + 0.055 * (layer - 1)
-        # if layer == 1:
-        #     pose.position.y = -0.04
-        # elif layer == 2:
-        #     pose.position.y = 0.03
-        # elif layer == 3:
-        #     pose.position.y = 0.08
         self.arm_position_pub.publish(pose)
 
 
