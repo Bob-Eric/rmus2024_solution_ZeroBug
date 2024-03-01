@@ -4,7 +4,7 @@ import os
 import traceback
 import cv2
 import numpy as np
-
+import cv2.aruco as aruco
 
 def preprocessing(frame):
     """
@@ -60,30 +60,16 @@ def classify(image, is_white_digit=True):
     idx = torch.argmax(logits, dim=1).item()
     return idx, logits
 
-
-def square_detection(
-    grayImg, camera_matrix, height_range=(-10.0, 10.0), area_thresh=225
-):
+def quads_detection(grayImg, area_thresh=225):
     """
-    Detect warped squares (block surfaces) in grayImg
-    `camera_matrix`: used to solve pnp
-    `height_range`: used to distinguish between block1-6 (no higher than +0.2m,
-        much lower when not stacked) and gameinfo board (much higher than blocks)
-        note that y axis in camera frame is downward.
-        e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
+    Detect quads (warped block surfaces) in grayImg
+    
     `area_thresh`: threshold to filter out small contours, like noise and quads far away
         set it to 50 => can detect quads 2m away but sometimes may confuse with "6" and "B"
         set it to 225 => can only detect quads 1.5m away but detected quads are bigger and more clear,
         for which classifier works better (nearly 100% acc).
     """
-    quads = []
     quads_f = []
-
-    # _, fillImg, _, _ = cv2.floodFill(grayImg, None, (0, 0), 255)
-    # fillImg = cv2.bitwise_not(fillImg)
-    # digits, _ = cv2.findContours(fillImg, cv2.RETR_FLOODFILL)
-    # cv2.imshow("TEST", fillImg)
-    # cv2.waitKey(0)
 
     contours, hierarchy = cv2.findContours(
         grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
@@ -102,24 +88,50 @@ def square_detection(
         # cv2.imshow("rgbImage", rgbImage)
         # cv2.waitKey(0)
 
-    contours = contours_filt
-    for i, contour in enumerate(contours):
+    quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
+    quads_aruco = np.squeeze(quads_aruco)
+    if len(quads_aruco) == 0:
+        return []
+
+    for i, contour in enumerate(contours_filt):
         x, y, w, h = cv2.boundingRect(contour)
-        if h / w > 2 or w / h > 2:
+        if h / w > 1.8 or w / h > 1.8:
             continue
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        # print(len(approx))
         if len(approx) != 4:
             continue
-        """ warped rect found """
-        quads.append(approx)
-        quads_f.append(approx.astype(float))
 
+        """ aruco neighbour filter """
+        ## quads_aruco: (n, 4, 2), approx: (4, 1, 2)
+        approx = np.squeeze(approx)
+        diffs = np.squeeze(quads_aruco - approx) ## diff shape of (n, 4, 2)
+        assert diffs.shape[-2:] == (4, 2)
+        cent_diffs = np.mean(diffs, axis=1)
+        cent_dists = [np.linalg.norm(cent_diff) for cent_diff in cent_diffs]
+        if min(cent_dists) > 10:     ## min distance >= 5 pixels
+            # print("aruco filter out a quad.")
+            continue
+        """ warped rect found """
+        quads_f.append(approx.astype(float))
+    return quads_f
+
+def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
+    """
+    Reconstruct blocks' poses relative to camera frame by pnp solving of quads
+    `quads`: list of quad (np.array with shape (1, 4, 2)), with dtype of float or int
+        e.g. return value of cv2.approxPolyDP or cv2.aruco.ArucoDetector.detectMarkers
+    `camera_matrix`: used to solve pnp
+    `height_range`: used to distinguish between block1-6 (no higher than +0.2m,
+        much lower when not stacked) and gameinfo board (much higher than blocks)
+        note that y axis in camera frame is downward.
+        e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
+    """
     rvec_list = []
     tvec_list = []
     quads_prj = []
     area_list = []
+    indices = []
 
     block_size = 0.045
     """ block center's (0, 0, 0) """
@@ -133,8 +145,8 @@ def square_detection(
         ]
     )
     distort_coeffs = np.array([[0, 0, 0, 0]], dtype=np.float32)
-    for quad in quads_f:
-        model_image = np.squeeze(quad)
+    for idx, quad in enumerate(quads):
+        model_image = np.squeeze(quad).astype(np.float32)
         """ calculate the pose of the corner points by pnp solving """
         ret, rvec, tvec = cv2.solvePnP(
             model_object, model_image, camera_matrix, distort_coeffs
@@ -163,12 +175,12 @@ def square_detection(
         rvec_list.append(rvec)
         tvec_list.append(tvec)
         area_list.append(area)
-    return quads_prj, tvec_list, rvec_list, area_list, quads
-
+        indices.append(idx)
+    return quads_prj, tvec_list, rvec_list, area_list, indices
 
 def classification_cnn(grayImg, quads):
     """ use cnn to classify the digit, works better than template matching """
-    quads_ID = []
+    quads_id = []
     warped_img_list = []
 
     for i in range(len(quads)):
@@ -182,45 +194,139 @@ def classification_cnn(grayImg, quads):
         ## save warped image
         warped_img_list.append(warped)
         idx, logits = classify(warped, is_white_digit=False)
-        prob_miss = 1 - torch.softmax(logits, dim=1)[:, idx]
-        quad_ID = idx + 1
-        quads_ID.append(quad_ID)
+        pairs = [(i+1, logit) for i, logit in enumerate(logits.reshape(-1))]
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        if pairs[0][1] - pairs[1][1] > 1000:
+            quad_id = idx + 1
+        else:
+            quad_id = 0
+        quads_id.append(quad_id)
         ########## for debug ##########
         # cv2.imshow(f"warped {i}", warped)
         # cv2.waitKey(0)
-        # print(logits)
-        ########## bug end ##########
-    return quads_ID, warped_img_list
+        # print(pairs)
+        ########## debug end ##########
+    return quads_id, warped_img_list
 
+def get_custom_dict():
+    custom_dict = aruco.Dictionary()
+    custom_dict.markerSize = 5
+    custom_dict.maxCorrectionBits = 8
+    markar_byte_list = []
 
+    marker_bits = np.array(
+        [
+            # num 1
+            [
+                [0, 1, 1, 0, 0],
+                [1, 0, 1, 0, 0],
+                [0, 0, 1, 0, 0],
+                [0, 0, 1, 0, 0],
+                [1, 1, 1, 1, 1],
+            ],
+            # num 2
+            [
+                [0, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [0, 0, 0, 1, 0],
+                [0, 0, 1, 0, 0],
+                [1, 1, 1, 1, 1],
+            ],
+            # num 3
+            [
+                [0, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [0, 0, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [0, 1, 1, 1, 0],
+            ],
+            # num 4
+            [
+                [0, 0, 0, 1, 0],
+                [0, 0, 1, 1, 0],
+                [0, 1, 0, 1, 0],
+                [1, 1, 1, 1, 1],
+                [0, 0, 0, 1, 0],
+            ],
+            # num 5
+            [
+                [1, 1, 1, 1, 1],
+                [1, 0, 0, 0, 0],
+                [0, 1, 1, 1, 0],
+                [0, 0, 0, 0, 1],
+                [1, 1, 1, 1, 0],
+            ],
+            # num 6
+            [
+                [0, 1, 1, 1, 1],
+                [1, 0, 0, 0, 0],
+                [1, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [0, 1, 1, 1, 0],
+            ],
+            # char B
+            [
+                [1, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [1, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [1, 1, 1, 1, 0],
+            ],
+            # char O
+            [
+                [0, 1, 1, 1, 0],
+                [1, 0, 0, 0, 1],
+                [1, 0, 0, 0, 1],
+                [1, 0, 0, 0, 1],
+                [0, 1, 1, 1, 0],
+            ],
+            # char X
+            [
+                [1, 0, 0, 0, 1],
+                [0, 1, 0, 1, 0],
+                [0, 0, 1, 0, 0],
+                [0, 1, 0, 1, 0],
+                [1, 0, 0, 0, 1],
+            ],
+        ],
+        dtype=np.uint8,
+    )
+
+    for i in range(len(marker_bits)):
+        compressed = aruco.Dictionary.getByteListFromBits(marker_bits[i])
+        markar_byte_list.append(compressed[0])
+    byte_list = np.array(markar_byte_list)
+    custom_dict.bytesList = byte_list
+    return custom_dict
+
+custom_dict = get_custom_dict()
+aruco_params = aruco.DetectorParameters()
+aruco_detector = aruco.ArucoDetector(custom_dict, aruco_params)
 def marker_detection(
     frame,
     camera_matrix,
     verbose=True,
-    height_range=(-10, 10),
-    exchange_station=False,
+    height_range=(-10, 10)
 ):
     """
     detect markers and poses of quads in RGB image `frame`
     Input:
         `height_range`: used to distinguish between block1-6 (no higher than +0.2m,
-            much lower when not stacked) and gameinfo board (much higher than blocks)
+            much lower when not stacked) and gameinfo board (much higher than blocks).
             note that y axis in camera frame is downward.
-            e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board
-        exchange_station: if True, mask the lower part of the image to detect gameinfo board.
-            can be a substitute of `height_range` to detect gameinfo board.
+            e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board.
     Output:
         quads_id, quads, area_list, tvec_list, rvec_list
     """
-    if exchange_station:
-        height_range = (-10, -0.2)
     boolImg, _ = preprocessing(frame)
 
-    quads, tvec_list, rvec_list, area_list, _ = square_detection(
-        boolImg, camera_matrix, height_range=height_range, area_thresh=300
-    )
-    quads_id, warpped_img_list = classification_cnn(boolImg, quads)
+    """ opencv morphological detector """
+    quads_f = quads_detection(boolImg, area_thresh=300)
+    quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
+    """ simple cnn classifier """
+    quads_id, _ = classification_cnn(boolImg, quads)
     if verbose:
+        print(f"detected: {quads_id}")
         id2tag = {
             0: "*",
             1: "1",
@@ -234,6 +340,8 @@ def marker_detection(
             9: "X",
         }
         for i in range(len(quads)):
+            if quads_id[i] == 0:
+                continue
             bbox = cv2.boundingRect(quads[i])
             try:
                 cv2.putText(
@@ -249,7 +357,7 @@ def marker_detection(
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
     # extract indices of valid quads in `quads_ID`
-    ids = [i for i in range(len(quads_id)) if quads_id[i] >= 1 and quads_id[i] <= 9]
+    ids = [i for i in range(len(quads_id)) if quads_id[i] != 0]
     return (
         [quads_id[_] for _ in ids],
         [quads[_] for _ in ids],
