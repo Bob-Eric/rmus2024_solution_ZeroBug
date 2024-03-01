@@ -444,7 +444,7 @@ class manipulater:
                             [0, self.pos_y_pid.setpoint],
                             self.tag_goal_tolerance,
                         )
-                        and abs(output_y) < 0.1
+                        and abs(output_y) < 0.02
                     )
                 # First align y, then align x
 
