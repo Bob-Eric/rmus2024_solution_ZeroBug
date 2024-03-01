@@ -60,7 +60,6 @@ def classify(image, is_white_digit=True):
     idx = torch.argmax(logits, dim=1).item()
     return idx, logits
 
-
 def quads_detection(grayImg, area_thresh=225):
     """
     Detect quads (warped block surfaces) in grayImg
@@ -70,7 +69,7 @@ def quads_detection(grayImg, area_thresh=225):
         set it to 225 => can only detect quads 1.5m away but detected quads are bigger and more clear,
         for which classifier works better (nearly 100% acc).
     """
-    quads = []
+    quads_f = []
 
     contours, hierarchy = cv2.findContours(
         grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
@@ -89,18 +88,33 @@ def quads_detection(grayImg, area_thresh=225):
         # cv2.imshow("rgbImage", rgbImage)
         # cv2.waitKey(0)
 
+    quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
+    quads_aruco = np.squeeze(quads_aruco)
+    if len(quads_aruco) == 0:
+        return []
+
     for i, contour in enumerate(contours_filt):
         x, y, w, h = cv2.boundingRect(contour)
-        if h / w > 2 or w / h > 2:
+        if h / w > 1.8 or w / h > 1.8:
             continue
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        # print(len(approx))
         if len(approx) != 4:
             continue
+
+        """ aruco neighbour filter """
+        ## quads_aruco: (n, 4, 2), approx: (4, 1, 2)
+        approx = np.squeeze(approx)
+        diffs = np.squeeze(quads_aruco - approx) ## diff shape of (n, 4, 2)
+        assert diffs.shape[-2:] == (4, 2)
+        cent_diffs = np.mean(diffs, axis=1)
+        cent_dists = [np.linalg.norm(cent_diff) for cent_diff in cent_diffs]
+        if min(cent_dists) > 10:     ## min distance >= 5 pixels
+            # print("aruco filter out a quad.")
+            continue
         """ warped rect found """
-        quads.append(approx)
-    return quads
+        quads_f.append(approx.astype(float))
+    return quads_f
 
 def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
     """
@@ -180,20 +194,24 @@ def classification_cnn(grayImg, quads):
         ## save warped image
         warped_img_list.append(warped)
         idx, logits = classify(warped, is_white_digit=False)
-        prob_miss = 1 - torch.softmax(logits, dim=1)[:, idx]
-        quad_id = idx + 1
+        pairs = [(i+1, logit) for i, logit in enumerate(logits.reshape(-1))]
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        if pairs[0][1] - pairs[1][1] > 1000:
+            quad_id = idx + 1
+        else:
+            quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
         # cv2.imshow(f"warped {i}", warped)
         # cv2.waitKey(0)
-        # print(logits)
-        ########## bug end ##########
+        # print(pairs)
+        ########## debug end ##########
     return quads_id, warped_img_list
 
 def get_custom_dict():
     custom_dict = aruco.Dictionary()
     custom_dict.markerSize = 5
-    custom_dict.maxCorrectionBits = 5
+    custom_dict.maxCorrectionBits = 8
     markar_byte_list = []
 
     marker_bits = np.array(
@@ -288,8 +306,7 @@ def marker_detection(
     frame,
     camera_matrix,
     verbose=True,
-    height_range=(-10, 10),
-    method="cnn"
+    height_range=(-10, 10)
 ):
     """
     detect markers and poses of quads in RGB image `frame`
@@ -298,33 +315,18 @@ def marker_detection(
             much lower when not stacked) and gameinfo board (much higher than blocks).
             note that y axis in camera frame is downward.
             e.g. (-0.2, 1.0) => blocks, (-10.0, -0.2) => gameinfo board.
-        `method`: "aruco" or "cnn"
-            if "aruco", will call cv2.aruco to handle detection and classification.
-            if "cnn", will use cv2's morphological operations to detect quads and use 
-            trained simple cnn to classify.
-            in rmus2024 simulation, "cnn" is robust, although a little slower than "aruco"
     Output:
         quads_id, quads, area_list, tvec_list, rvec_list
     """
     boolImg, _ = preprocessing(frame)
 
-    if method == "cnn":
-        """ opencv morphological detector """
-        quads = quads_detection(boolImg, area_thresh=300)
-        quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads, camera_matrix, height_range=height_range)
-        """ simple cnn classifier """
-        quads_id, _ = classification_cnn(boolImg, quads)
-    elif method == "aruco":
-        """ aruco detector and classifier """
-        quads_f, idx_list, rejectedImgPoints = aruco_detector.detectMarkers(cv2.bitwise_not(boolImg))
-        quads, tvec_list, rvec_list, area_list, indices = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
-        quads_id = [idx_list[idx].item()+1 for idx in indices]
-    else:
-        print(f"marker_detection(): unknown method received {method}! available options are aruco and cnn.")
-
-    print(f"detected: {quads_id}")
-
+    """ opencv morphological detector """
+    quads_f = quads_detection(boolImg, area_thresh=300)
+    quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
+    """ simple cnn classifier """
+    quads_id, _ = classification_cnn(boolImg, quads)
     if verbose:
+        print(f"detected: {quads_id}")
         id2tag = {
             0: "*",
             1: "1",
@@ -338,6 +340,8 @@ def marker_detection(
             9: "X",
         }
         for i in range(len(quads)):
+            if quads_id[i] == 0:
+                continue
             bbox = cv2.boundingRect(quads[i])
             try:
                 cv2.putText(
@@ -353,7 +357,7 @@ def marker_detection(
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
     # extract indices of valid quads in `quads_ID`
-    ids = [i for i in range(len(quads_id)) if quads_id[i] >= 1 and quads_id[i] <= 9]
+    ids = [i for i in range(len(quads_id)) if quads_id[i] != 0]
     return (
         [quads_id[_] for _ in ids],
         [quads[_] for _ in ids],
