@@ -99,23 +99,15 @@ class Processor:
         )
         locked_current_mode = self.current_mode
 
-        if locked_current_mode == ModeRequese.DoNothing:
-            ## only try detection, don't update
-            marker_detection(self.image, self.camera_matrix, self.verbose)
-        else:
-            ## update blocks_info (block 1-6 and B, O, X) and publish it
-            self.update_blocks_info(self.image)
-            self.publish_blocks_info()
-
-        # detect 3 wanted blocks from gameinfo board
-        if locked_current_mode == ModeRequese.GameInfo:
-            detected_gameinfo = self.get_gameinfo(self.image)
-            if detected_gameinfo is not None:
-                if self.detected_gameinfo is None:
-                    self.detected_gameinfo = detected_gameinfo
-                assert tuple(self.detected_gameinfo) == tuple(detected_gameinfo)
-            self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
+        id_list, _, _, tvec_list, rvec_list = marker_detection(
+            self.image, self.camera_matrix, self.verbose,)
+        if locked_current_mode != ModeRequese.DoNothing:
+            ## update gameinfo (and publish)
+            self.update_gameinfo(id_list, tvec_list)
+            ## update blocks_info (and publish)
+            self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
+        return 
 
     def depthCallback(self, image):
         self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
@@ -127,35 +119,33 @@ class Processor:
         else:
             return switchResponse(req.mode)
 
-    def get_gameinfo(self, image):
+    def update_gameinfo(self, id_list, tvec_list):
         gameinfo = [0, 0, 0]
-        id_list, quads_list, area_list, tvec_list, rvec_list = marker_detection(
-            image,
-            camera_matrix=self.camera_matrix,
-            verbose=self.verbose,
-            exchange_station=True,
-        )
+        ## quads of gameinfo are high, so y component in camera frame is small. (x, y axis
+        ##  of camera frame points right and downwards respectively), typical value is around -0.31.
+        digit_list = [(id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.2]
+        if len(digit_list) != 3:
+            # print(f"detected {len(digit_list)} digits in gameinfo board, not 3")
+            return
+        digit_list.sort(key=lambda pair: pair[1])
+        gameinfo = [id for (id, x) in digit_list]
+        if self.detected_gameinfo is None:
+            self.detected_gameinfo = gameinfo
+        assert tuple(self.detected_gameinfo) == tuple(gameinfo)
+        ## publish gameinfo
+        self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
+        print(f"gameinfo: {gameinfo}")
+        return
 
-        digits_list = []
-        for id, quads in zip(id_list, quads_list):
-            x = (quads[0][0][0] + quads[1][0][0] + quads[2][0][0] + quads[3][0][0]) / 4
-            digits_list.append((id, x))
-        if len(digits_list) != 3:
-            # print(f"detected {len(digits_list)} digits in gameinfo board, not 3")
-            return None
-        digits_list.sort(key=lambda pair: pair[1])
-        gameinfo = [id for (id, x) in digits_list]
-        print(gameinfo)
-        return gameinfo
-
-    def update_blocks_info(self, image):
-        id_list, quads_list, area_list, tvec_list, rvec_list = marker_detection(
-            image,
-            camera_matrix=self.camera_matrix,
-            verbose=self.verbose,
-            height_range=(-0.2, 10.0),
-        )
-
+    def update_blocks_info(self, id_list, tvec_list, rvec_list):
+        """ update blocks_info (block 1-6 and B, O, X) and publish it """
+        ## filter out gameinfo quads (t[1] < -0.2)
+        for i in reversed(range(len(id_list))):
+            if tvec_list[i][1] < -0.2:
+                id_list.pop(i)
+                tvec_list.pop(i)
+                rvec_list.pop(i)
+        ## get transform of coord_cam and coord_glb
         pose_list = [pose_aruco_2_ros(r, t) for t, r in zip(tvec_list, rvec_list)]
         gpose_list = []
         coord_cam = "camera_aligned_depth_to_color_frame_correct"
@@ -175,7 +165,6 @@ class Processor:
             ## transform from pose_stamp (camera_link) to gpose (map)
             gpose_stamp = tf2_geometry_msgs.do_transform_pose(pose_stamp, trans)
             gpose_list.append(gpose_stamp.pose)
-
         for i in range(len(self.blocks_info)):
             id = i + 1
             if id in id_list:
@@ -189,7 +178,7 @@ class Processor:
                 ]
 
                 ## TODO: test if there are blocks whose gpose differs a lot from last gpose
-                if self.blocks_info[i] is not None and id == 7:
+                if self.blocks_info[i] is not None: # and id == 7:
                     last_gpose = self.blocks_info[i][1]
                     p1 = np.array(
                         (
@@ -206,8 +195,8 @@ class Processor:
                         )
                     )
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
-                    if np.linalg.norm(p1 - p2) > 0.1:
-                        rospy.logwarn(f"Block B has moved a lot. Maybe misdetection.")
+                    if np.linalg.norm(p1-p2) > 0.2:
+                        rospy.logwarn(f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection.")
 
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
@@ -221,8 +210,8 @@ class Processor:
                 pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
                 block_info_makeup = [pose, gpose, self.this_image_time_ms, False]
                 self.blocks_info[i] = block_info_makeup
-                ## if not working, just set it to None
-                # this.blocks_info[i] = None
+        ## publish blocks info
+        self.publish_blocks_info()
         return
 
     def publish_blocks_info(self):
@@ -286,6 +275,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.BlockInfo, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
