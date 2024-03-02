@@ -291,7 +291,8 @@ class manipulater:
                     self.current_marker_poses
                 )
                 self.sendBaseVel([0.0, 0.0, 0.0])
-                rospy.sleep(0.5)
+                ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
+                rospy.sleep(1)
                 self.open_gripper()
                 rospy.sleep(0.5)
 

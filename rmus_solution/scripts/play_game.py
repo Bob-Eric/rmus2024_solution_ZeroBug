@@ -39,13 +39,11 @@ class gamecore:
             rospy.sleep(0.5)
 
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
-        self.blockinfo_list = MarkerInfoList()
+        self.blockinfo_dict = {}
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
 
         """ gamecore state params: """
-        self.observing = (
-            True  ## if self.observing == True, classify the block to mining areas
-        )
+        self.observing = True ## if self.observing == True, classify the block to mining areas
 
         """ gamecore logic: """
         self.observation()
@@ -89,12 +87,12 @@ class gamecore:
         self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
         self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
-        self.observation = False
+        self.observing = False
         print("----------done observing----------")
 
     def update_block_info(self, blockinfo_list: MarkerInfoList):
-        self.blockinfo_list = blockinfo_list
-        blockinfo: MarkerInfo
+        for blockinfo in blockinfo_list.markerInfoList:
+            self.blockinfo_dict[blockinfo.id] = blockinfo
         # for blockinfo in blockinfo_list.markerInfoList:
         #     if blockinfo.id != 4 and blockinfo.id != 6:
         #         if blockinfo.in_cam:
@@ -144,37 +142,63 @@ class gamecore:
         self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
         return True
 
-    def stack(self, count: int):
-        """stack above highest block in sight"""
-        if self.blockinfo_list is None or len(self.blockinfo_list.markerInfoList) == 0:
-            return
-        block_list = [
-            blockinfo
-            for blockinfo in self.blockinfo_list.markerInfoList
-            if blockinfo.in_cam
-        ]
-        ## frame "map" x,y,z points forwards, right and upwards respectively
-        block_list.sort(key=lambda blockinfo: blockinfo.gpose.position.z, reverse=True)
-        highest_block = block_list[0]
-        height = highest_block.gpose.position.z
+    def stack(self, block_id:int, slot:int, layer:int):
+        """ stack the block to the given slot and layer """
+        for i in range(3):
+            print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
+            self.align_res = self.aligner(AlignRequest.Place, slot, layer)
+            self.navigation_result = self.navigation(PointName.Station_2, "")
+            hbias = self.get_hbias(block_id, slot)
+            if self.get_layer(block_id) == layer and hbias < 0.01:
+                print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
+                return True
+            else:
+                print(f"Result: hbias of {hbias}.")
+            self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
+        print(f"Max attempt reached. stack failed.")
+        return False
 
-        print(f"highest block id: {highest_block.id}, gpose height: {height}")
+    def get_layer(self, block_id:int):
+        """ calc given block's layer, assuming block is in exchange spot """
+        if block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam:
+            return -1
+        block_info = self.blockinfo_dict[block_id]
+        # block in layer 1 is at height of height_base
+        block_size, height_base = 0.05, 0.035
+        layer = round((block_info.gpose.position.z - height_base) / block_size) + 1
+        return layer
 
-        ## blocks in first layer is 0.035m above the base
-        height_base = 0.035
-        block_size = 0.05
-        layers = round((height - height_base) / block_size)
-        if count >= 2:
-            # only stack three layers, the last block is stack on the right to avoid falling
-            self.align_res = self.aligner(AlignRequest.Place, 9, 2)
-        else:
-            ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
-            self.align_res = self.aligner(AlignRequest.Place, 7, 1 + layers + 1)
-        ## TODO: failure logic
-        return
+    def get_hbias(self, block_id:int, slot:int):
+        """ calc horizontal bias of given block to given slot,
+            return math.inf if block or slot not in sight """
+        if block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam:
+            return math.inf
+        if block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam:
+            return math.inf
+        ## x, y, z axis of "map frame" point forwards, left and upwards respectively
+        block_info = self.blockinfo_dict[block_id]
+        slot_info = self.blockinfo_dict[slot]
+        return abs(block_info.gpose.position.y - slot_info.gpose.position.y)
 
-    def check_stacked_blocks(self):
-        pass
+    def check_stacked_blocks(self, stackinfo:dict):
+        """ check if blocks are stacked as stackinfo
+
+            `stackinfo`: a dict like {block_id: (slot, layer)}
+        """
+        for block_id, (slot, layer) in stackinfo.items():
+            # if block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam:
+            #     print(f"Bad view: block {block_id} is not in sight.")
+            #     return False
+            if self.get_layer(block_id) != layer:
+                print(f"Bad stacking: block {block_id} is not in layer {layer}.")
+                return False
+            hbias = self.get_hbias(block_id, slot)
+            if hbias > 0.02:     
+                ## bias of center is more than half of block size
+                print(f"Bad stacking: block {block_id} is not in slot {slot}. \
+                    horizontal bias is {hbias * 100} > 2cm.")
+                return False
+        return True
 
     def grasp_and_place(self):
         print("----------grasping three basic blocks----------")
@@ -185,11 +209,13 @@ class gamecore:
                 ## TODO: failure logic
                 continue
             self.navigation_result = self.navigation(PointName.Station_1 + i, "")
-            self.align_res = self.aligner(AlignRequest.Place, 7 + i, 1)
+            self.stack(target, 7 + i, 1)
             print(f"----------done grasping No.{i} block(id={target})----------")
         print("----------done grasping three basic blocks----------")
         blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
         print(f"stacking the rest of the blocks: {blocks_left}")
+        slots_order = [7, 7, 8]
+        layers_order = [2, 3, 2]
         for i, target in enumerate(blocks_left):
             print(f"----------grasping No.{i} block(id={target})----------")
             done = self.go_get_block(target)
@@ -197,9 +223,14 @@ class gamecore:
                 ## TODO: failure logic
                 continue
             self.navigation_result = self.navigation(PointName.Station_2, "")
-            self.stack(i)
+            self.stack(target, slots_order[i], layers_order[i])
             print(f"----------done stacking No.{i} block(id={target})----------")
         print("----------done stacking three blocks----------")
+
+        ## check stacking
+        b1, b2, b3 = self.gameinfo.data
+        b4, b5, b6 = blocks_left
+        self.check_stacked_blocks({b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)})
 
 
 if __name__ == "__main__":

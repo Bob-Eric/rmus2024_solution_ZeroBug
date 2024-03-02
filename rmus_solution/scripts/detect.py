@@ -326,7 +326,7 @@ def marker_detection(
     """ simple cnn classifier """
     quads_id, _ = classification_cnn(boolImg, quads)
     if verbose:
-        print(f"detected: {quads_id}")
+        # print(f"detected: {quads_id}")
         id2tag = {
             0: "*",
             1: "1",
