@@ -150,12 +150,17 @@ class Processor:
         gpose_list = []
         coord_cam = "camera_aligned_depth_to_color_frame_correct"
         coord_glb = "map"
-        trans = self.tfBuffer.lookup_transform(
-            coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
-        )
-        inv_trans = self.tfBuffer.lookup_transform(
-            coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
-        )
+        try:
+            trans = self.tfBuffer.lookup_transform(
+                coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
+            )
+            inv_trans = self.tfBuffer.lookup_transform(
+                coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
+            )
+        except Exception as e:
+            print(f"Failed to get transform: {e}")
+            return
+
         for pose in pose_list:
             ## define pose stamped in camera_link
             pose_stamp = tf2_geometry_msgs.PoseStamped()
