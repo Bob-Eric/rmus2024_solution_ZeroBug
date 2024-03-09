@@ -8,6 +8,5 @@ dictitems:
   desired_cube_y: 0.0
   desired_tag_x: 0.32
   desired_tag_y: 0.0
-  x_seperate_I_threshold: 0.1
-  y_seperate_I_threshold: 0.1
+  seperate_I_threshold: 0.1
 state: []
