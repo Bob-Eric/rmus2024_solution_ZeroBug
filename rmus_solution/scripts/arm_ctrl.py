@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from sympy import false
 import rospy
 import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
 from simple_pid import PID
+import tf2_ros
+import tf2_geometry_msgs
+from geometry_msgs.msg import Pose, TransformStamped, Vector3
 
 
 class arm_action:
@@ -15,6 +19,9 @@ class arm_action:
         self.__cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         self.__cmd_vel_sub = rospy.Subscriber(
             "/cmd_vel", Twist, self.__cmd_vel_callback
+        )
+        self.__gripper_state_sub = rospy.Subscriber(
+            "/gripper_state", Point, self.__gripper_state_callback
         )
         self.movement_start_time = 0.0
         self.movement_end_time = 0.0
@@ -46,6 +53,25 @@ class arm_action:
             self.movement_start_time = rospy.get_time()
 
         self.__vel_old = vel
+
+    def __gripper_state_callback(self, msg: Point):
+        # 1 for grasped something, 0 for not
+        self.__gripper_state = msg.x
+
+    def can_arm_grasp(self, target_in_arm_base: list):
+        if target_in_arm_base is None:
+            return False
+        elif abs(target_in_arm_base[1]) > 0.025:
+            return False
+        elif 0.18 <= target_in_arm_base[0] <= 0.22 and target_in_arm_base[2] >= -0.10:
+            return True
+        elif 0.09 <= target_in_arm_base[0] < 0.18 and target_in_arm_base[2] > 0.08:
+            return True
+        else:
+            return False
+
+    def has_grasped(self):
+        return self.__gripper_state == 1
 
     def is_vel_saturating(self):
         return np.linalg.norm(self.__vel[0:2]) >= 0.5
@@ -98,10 +124,13 @@ class arm_action:
         pose.position.y = -0.04 + 0.055 * (place_layer - 1)
         self.__position_pub.publish(pose)
 
-    def grasp_pos(self):
+    def grasp_pos(self, target_in_arm_base: list):
         pose = Pose()
-        pose.position.x = 0.19
-        pose.position.y = -0.08
+
+        # limit the grasp position 0.09 <= x <= 0.22, -0.08 <= y
+        pose.position.x = max(min(target_in_arm_base[0], 0.22), 0.09)
+        pose.position.y = max(target_in_arm_base[2], -0.08)
+        rospy.loginfo(f"moving to grasp position: {pose.position.x}, {pose.position.y}")
         self.__position_pub.publish(pose)
 
     def grasp_cube(self):
@@ -110,9 +139,9 @@ class arm_action:
         self.reset_pos()
         rospy.sleep(1)
 
-    def go_and_grasp(self):
+    def go_and_grasp(self, target_in_arm_base: list):
         self.send_cmd_vel([0.0, 0.0, 0.0])
-        self.grasp_pos()
+        self.grasp_pos(target_in_arm_base)
         rospy.sleep(0.5)
         rospy.loginfo("Place: reach the goal for placing.")
 
@@ -164,6 +193,24 @@ class align_action:
         self.__pid_x = PID()
         self.__pid_y = PID()
         self.__arm_action = arm_act
+        self.__base_link_pos_old = [0.0, 0.0]
+        self.__delta_pos = 0.0
+        self.tfBuffer = tf2_ros.Buffer()
+        tf2_ros.TransformListener(self.tfBuffer)
+        self.__base_link_pos_timer = rospy.Timer(
+            rospy.Duration(2.5), self.__base_link_pos_callback
+        )
+
+    def __base_link_pos_callback(self, timer_event):
+        base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
+            "base_link", "map", rospy.Time(0), rospy.Duration(1.0)
+        )
+        base_link_pos_vec: Vector3 = base_link_tf_stamped.transform.translation
+        base_link_pos = [base_link_pos_vec.x, base_link_pos_vec.y]
+        self.__delta_pos = np.linalg.norm(
+            np.array(base_link_pos) - np.array(self.__base_link_pos_old)
+        )
+        self.__base_link_pos_old = base_link_pos
 
     def set_pid_param(self, Kp: float, Ki: float, Kd: float, sep_Ki_thres: float):
         self.__Ki = Ki
@@ -208,6 +255,24 @@ class align_action:
         vel = self.__cal_pid_vel(self.__measured_point)
         self.__arm_action.send_cmd_vel(vel)
 
+        # only check if robot is saturating for 2.5s
+        if (
+            self.__arm_action.is_vel_saturating()
+            and rospy.get_time() - self.__arm_action.movement_saturat_time > 2.5
+        ):
+            if self.__delta_pos < 0.05:
+                # robot is stuck
+                rospy.logwarn("robot is stuck")
+                reverse_vel_x = -np.sign(vel[0]) * 0.3
+                reverse_vel_y = -np.sign(vel[1]) * 0.3
+                self.__arm_action.send_cmd_vel([reverse_vel_x, reverse_vel_y, 0.0])
+                rospy.sleep(0.5)
+                self.__arm_action.send_cmd_vel([0.0, 0.0, 0.0])
+                rospy.sleep(0.5)
+                return False
+
+        return True
+
     def is_near_setpoint(self, tolerance: float):
         satisfy = (
             np.linalg.norm(
@@ -216,6 +281,9 @@ class align_action:
             <= tolerance
         )
         return satisfy
+
+    def is_setpoint_too_faraway(self):
+        return self.__measured_point[0] <= -0.5 or abs(self.__measured_point[1]) >= 2.0
 
 
 if __name__ == "__main__":
