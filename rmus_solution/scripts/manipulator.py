@@ -20,6 +20,7 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
 
+prefix = "[manipulator]"
 
 class manipulator:
 
@@ -82,7 +83,7 @@ class manipulator:
         # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.image_time_now > 0.1:
-            rospy.loginfo("latency detected!")
+            rospy.loginfo(prefix + "latency detected!")
 
             # Go back for 0.5s
             if rospy.get_time() - initial_time > 1.0:
@@ -106,7 +107,7 @@ class manipulator:
             resp = self.place_cube_resp(rate, req.layer)
             return resp
         else:
-            rospy.logerr("Invalid mode")
+            rospy.logerr(prefix + "Invalid mode")
             resp = graspsignalResponse()
             resp.res = False
             return resp
@@ -141,7 +142,7 @@ class manipulator:
         if 1 <= place_layer <= 3:
             self.arm_act.preparation_for_place(place_layer)
         else:
-            rospy.logerr("place_layer should be 1, 2 or 3")
+            rospy.logerr(prefix + "place_layer should be 1, 2 or 3")
             resp.res = False
             return resp
 
@@ -178,7 +179,7 @@ class manipulator:
                 resp.res = False
                 error_msg = "Robot is stuck, goint backward!"
                 resp.response = error_msg
-                rospy.logwarn(error_msg)
+                rospy.logwarn(prefix + error_msg)
                 reverse_vel_x = -np.sign(output_x) * 0.3
                 reverse_vel_y = -np.sign(output_y) * 0.3
                 self.arm_act.send_cmd_vel([reverse_vel_x, reverse_vel_y, 0.0])
@@ -197,7 +198,7 @@ class manipulator:
         base_link_pos = np.array([base_link_pos_vec.x, base_link_pos_vec.y])
 
         if np.linalg.norm(base_link_pos - self.base_link_pos_old) < 0.05:
-            rospy.logwarn("robot is stuck")
+            rospy.logwarn(prefix + "robot is stuck")
             return True
 
         self.base_link_pos_old = base_link_pos
@@ -229,7 +230,7 @@ class manipulator:
             "camera_aligned_depth_to_color_frame_correct",
             rospy.Time.now(),
         ):
-            rospy.logerr(
+            rospy.logerr(prefix + 
                 "pick_and_place: cannot find transform between base_link and camera_aligned_depth_to_color_frame_correct"
             )
             return None, None

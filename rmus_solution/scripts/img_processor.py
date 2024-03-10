@@ -39,6 +39,11 @@ def pose_aruco_2_ros(rvec, tvec):
     aruco_pose_msg.orientation.w = r_quat[3]
     return aruco_pose_msg
 
+prefix = "[img_processor]"
+sysprint = print
+def print(*args, **kwargs):
+    sysprint(prefix, end="")
+    sysprint(*args, **kwargs)
 
 class Processor:
     def __init__(self, initial_mode=ModeRequese.DoNothing, verbose=True) -> None:
@@ -55,7 +60,7 @@ class Processor:
         while not rospy.is_shutdown():
             try:
                 rospy.wait_for_message("/rtabmap/rgbd_image", RGBDImage, timeout=5.0)
-                rospy.loginfo("Get topic /rtabmap/rgbd_image.")
+                rospy.loginfo(prefix + "Get topic /rtabmap/rgbd_image.")
                 break
             except:
                 rospy.logwarn("Waiting for message /rtabmap/rgbd_image.")
@@ -66,9 +71,9 @@ class Processor:
                 camerainfo = rospy.wait_for_message(
                     "/camera/color/camera_info", CameraInfo, timeout=5.0
                 )
-                rospy.loginfo("Get topic /camera/color/camera_info.")
+                rospy.loginfo(prefix + "Get topic /camera/color/camera_info.")
                 self.camera_matrix = np.array(camerainfo.K, "double").reshape((3, 3))
-                rospy.loginfo("camera_matrix :\n {}".format(self.camera_matrix))
+                rospy.loginfo(prefix + "camera_matrix :\n {}".format(self.camera_matrix))
                 break
             except:
                 rospy.logwarn("Waiting for message /camera/color/camera_info.")
@@ -281,5 +286,5 @@ class Processor:
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
     rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
-    rospy.loginfo("Image thread started")
+    rospy.loginfo(prefix + "Image thread started")
     rospy.spin()
