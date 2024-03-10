@@ -6,6 +6,7 @@ import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
 from simple_pid import PID
 
+prefix = "[arm_ctrl]"
 
 class arm_action:
 
@@ -68,7 +69,7 @@ class arm_action:
         open_gripper_msg.x = 0.0
         open_gripper_msg.y = 0.0
         open_gripper_msg.z = 0.0
-        rospy.loginfo("open the gripper")
+        rospy.loginfo(prefix + "open the gripper")
         self.__gripper_pub.publish(open_gripper_msg)
 
     def close_gripper(self):
@@ -76,7 +77,7 @@ class arm_action:
         close_gripper_msg.x = 1.0
         close_gripper_msg.y = 0.0
         close_gripper_msg.z = 0.0
-        rospy.loginfo("close the gripper")
+        rospy.loginfo(prefix + "close the gripper")
         self.__gripper_pub.publish(close_gripper_msg)
 
     def reset_pos(self):
@@ -88,11 +89,11 @@ class arm_action:
         reset_arm_msg.orientation.y = 0.0
         reset_arm_msg.orientation.z = 0.0
         reset_arm_msg.orientation.w = 0.0
-        rospy.loginfo("reset the arm")
+        rospy.loginfo(prefix + "reset the arm")
         self.__position_pub.publish(reset_arm_msg)
 
     def place_pos(self, place_layer: int = 1):
-        rospy.loginfo("<manipulater>: now prepare to place (first layer)")
+        rospy.loginfo(prefix + "<manipulater>: now prepare to place (first layer)")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = -0.04 + 0.055 * (place_layer - 1)
@@ -114,7 +115,7 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
         self.grasp_pos()
         rospy.sleep(0.5)
-        rospy.loginfo("Place: reach the goal for placing.")
+        rospy.loginfo(prefix + "Place: reach the goal for placing.")
 
         self.close_gripper()
         rospy.sleep(0.5)
@@ -128,9 +129,9 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
 
     def go_and_place(self):
-        rospy.loginfo("Align well in the all dimention, going open loop")
-        rospy.loginfo("Place: reach the goal for placing.")
-        rospy.loginfo("Align well in the horizon dimention")
+        rospy.loginfo(prefix + "Align well in the all dimention, going open loop")
+        rospy.loginfo(prefix + "Place: reach the goal for placing.")
+        rospy.loginfo(prefix + "Align well in the horizon dimention")
 
         self.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
@@ -144,8 +145,8 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
 
     def preparation_for_grasp(self):
-        rospy.loginfo("First align then grasp")
-        rospy.loginfo("align to the right place")
+        rospy.loginfo(prefix + "First align then grasp")
+        rospy.loginfo(prefix + "align to the right place")
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         self.open_gripper()
@@ -154,7 +155,7 @@ class arm_action:
     def preparation_for_place(self, place_layer: int):
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
-        rospy.loginfo("First align then place")
+        rospy.loginfo(prefix + "First align then place")
         self.place_pos(place_layer)
         ...
 
