@@ -17,7 +17,7 @@ def preprocessing(frame):
     boolImg = (
         np.logical_and(
             np.logical_and(
-                np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 150),
+                np.logical_or(hsvImg[:, :, 0] <= 30, hsvImg[:, :, 0] >= 130),
                 hsvImg[:, :, 1] >= 130,
             ),
             hsvImg[:, :, 2] >= 70,

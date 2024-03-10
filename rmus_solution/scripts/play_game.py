@@ -4,9 +4,9 @@
 import rospy
 from std_msgs.msg import UInt8MultiArray
 from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
-from rmus_solution.rmus_solution.scripts.manipulator import AlignRequest
 from navi_control import PointName, router
 from img_processor import ModeRequese
+from manipulator import AlignRequest
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
 from geometry_msgs.msg import Point
 import math
@@ -48,6 +48,7 @@ class gamecore:
         """ gamecore logic: """
         self.observation()
         self.grasp_and_place()
+        self.align_res = self.align_res(AlignRequest.Reset, 0, 0)
         self.navigation_result = self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
@@ -144,17 +145,20 @@ class gamecore:
 
     def stack(self, block_id:int, slot:int, layer:int):
         """ stack the block to the given slot and layer """
-        for i in range(3):
+        max_attempt = 3
+        hbias_allow = 0.018  # 1.8cm horizontal bias is allowed
+        for i in range(max_attempt):
             print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
             self.align_res = self.aligner(AlignRequest.Place, slot, layer)
             self.navigation_result = self.navigation(PointName.Station_2, "")
             hbias = self.get_hbias(block_id, slot)
-            if self.get_layer(block_id) == layer and hbias < 0.01:
+            if self.get_layer(block_id) == layer and hbias < hbias_allow:
                 print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
                 return True
             else:
                 print(f"Result: hbias of {hbias}.")
-            self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
+            if i < max_attempt - 1:
+                self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
         print(f"Max attempt reached. stack failed.")
         return False
 
