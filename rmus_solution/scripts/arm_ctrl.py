@@ -13,21 +13,44 @@ class arm_action:
         self.__gripper_pub = rospy.Publisher("arm_gripper", Point, queue_size=10)
         self.__position_pub = rospy.Publisher("arm_position", Pose, queue_size=10)
         self.__cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+        self.__cmd_vel_sub = rospy.Subscriber(
+            "/cmd_vel", Twist, self.__cmd_vel_callback
+        )
         self.movement_start_time = 0.0
         self.movement_end_time = 0.0
         self.movement_saturat_time = 0.0
+        self.__vel_old = [0.0, 0.0, 0.0]
 
-    def send_cmd_vel(self, vel: list):
+    def __cmd_vel_callback(self, msg: Twist):
+        vel = [msg.linear.x, msg.linear.y, msg.angular.z]
         self.__vel = vel
 
-        if np.linalg.norm(vel) > 0.5:
+        # only checks for the movement in the x-y plane
+        if (
+            np.linalg.norm(vel[0:2]) >= 0.5
+            and np.linalg.norm(self.__vel_old[0:2]) < 0.5
+        ):
+            # get the time when the movement saturates
             self.movement_saturat_time = rospy.get_time()
-
-        if np.linalg.norm(vel) < 0.1:
+        if (
+            np.linalg.norm(vel[0:2]) < 0.1
+            and np.linalg.norm(self.__vel_old[0:2]) >= 0.1
+        ):
+            # get the time when the movement ends
             self.movement_end_time = rospy.get_time()
-        else:
+        if (
+            np.linalg.norm(vel[0:2]) >= 0.1
+            and np.linalg.norm(self.__vel_old[0:2]) < 0.1
+        ):
+            # get the time when the movement starts
             self.movement_start_time = rospy.get_time()
 
+        self.__vel_old = vel
+
+    def is_vel_saturating(self):
+        return np.linalg.norm(self.__vel[0:2]) >= 0.5
+
+    def send_cmd_vel(self, vel: list):
         twist = Twist()
         twist.linear.z = 0.0
         twist.linear.x = vel[0]
@@ -87,6 +110,54 @@ class arm_action:
         self.reset_pos()
         rospy.sleep(1)
 
+    def go_and_grasp(self):
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+        self.grasp_pos()
+        rospy.sleep(0.5)
+        rospy.loginfo("Place: reach the goal for placing.")
+
+        self.close_gripper()
+        rospy.sleep(0.5)
+
+        self.close_gripper()
+        rospy.sleep(0.5)
+        self.reset_pos()
+
+        self.send_cmd_vel([-0.3, 0.0, 0.0])
+        rospy.sleep(0.5)
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+
+    def go_and_place(self):
+        rospy.loginfo("Align well in the all dimention, going open loop")
+        rospy.loginfo("Place: reach the goal for placing.")
+        rospy.loginfo("Align well in the horizon dimention")
+
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+        ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
+        rospy.sleep(2)
+        self.open_gripper()
+        rospy.sleep(0.5)
+
+        self.send_cmd_vel([-0.3, 0.0, 0.0])
+        rospy.sleep(0.5)
+        self.reset_pos()
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+
+    def preparation_for_grasp(self):
+        rospy.loginfo("First align then grasp")
+        rospy.loginfo("align to the right place")
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+        rospy.sleep(0.5)
+        self.open_gripper()
+        rospy.sleep(0.1)
+
+    def preparation_for_place(self, place_layer: int):
+        self.send_cmd_vel([0.0, 0.0, 0.0])
+        rospy.sleep(0.5)
+        rospy.loginfo("First align then place")
+        self.place_pos(place_layer)
+        ...
+
 
 class align_action:
     def __init__(self, arm_act: arm_action):
@@ -114,10 +185,13 @@ class align_action:
         self.__pid_x.sample_time = sample_time
         self.__pid_y.sample_time = sample_time
 
-    def __cal_pid_vel(self, current_pos: list):
+    def set_measured_point(self, measured_point: list):
+        self.__measured_point = measured_point
+
+    def __cal_pid_vel(self, measured_pos: list):
         if (
-            np.linalg.norm(np.array(current_pos) - np.array(self.__setpoint))
-            < self.__sep_Ki_thres
+            np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.__setpoint))
+            > self.__sep_Ki_thres
         ):
             self.__pid_x.Ki = 0
             self.__pid_y.Ki = 0
@@ -125,18 +199,27 @@ class align_action:
             self.__pid_x.Ki = self.__Ki
             self.__pid_y.Ki = self.__Ki
 
-        vel_x = self.__pid_x(current_pos[0])
-        vel_y = self.__pid_y(current_pos[1])
+        vel_x = -self.__pid_x(measured_pos[0])
+        vel_y = -self.__pid_y(measured_pos[1])
 
         return [vel_x, vel_y, 0.0]
 
-    def align(self, current_pos: list):
-        vel = self.__cal_pid_vel(current_pos)
+    def align(self):
+        vel = self.__cal_pid_vel(self.__measured_point)
         self.__arm_action.send_cmd_vel(vel)
+
+    def is_near_setpoint(self, tolerance: float):
+        satisfy = (
+            np.linalg.norm(
+                np.array(self.__measured_point[0:2]) - np.array(self.__setpoint)
+            )
+            <= tolerance
+        )
+        return satisfy
 
 
 if __name__ == "__main__":
     rospy.init_node("arm_ctrl", anonymous=True)
     my_arm_act = arm_action()
-    my_align_act = align_action(1 / 30, my_arm_act)
+    my_align_act = align_action(my_arm_act)
     rospy.spin()

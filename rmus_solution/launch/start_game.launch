@@ -1,6 +1,6 @@
 <launch>
 
-    <node pkg="rmus_solution" type="manipulater.py" name="shadow_aligner" output="screen" />
+    <node pkg="rmus_solution" type="manipulator.py" name="shadow_aligner" output="screen" />
     <node pkg="rmus_solution" type="img_processor.py" name="img_process_node" output="screen" />
     <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen" />
 

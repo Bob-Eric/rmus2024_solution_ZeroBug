@@ -148,7 +148,7 @@ if __name__ == "__main__":
     imu_transfer_pub = rospy.Publisher("/rtabmap/transfer/imu", Imu, queue_size=10)
     odom_transfer = rospy.Subscriber("/ep/odom", Odometry, OdomTransfer)
     imu_transfer = rospy.Subscriber("/imu/data_raw", Imu, ImuTransfer)
-    ekf_odom_pub = rospy.Publisher("/rtabmap/odom", Odometry)
+    ekf_odom_pub = rospy.Publisher("/rtabmap/odom", Odometry, queue_size=10)
     ekf_odom_transfer = rospy.Subscriber(
         "/rtabmap/odom_combined", PoseWithCovarianceStamped, EkfOdomTransfer
     )
