@@ -1,5 +1,4 @@
-# footprint: [[-0.16, -0.12], [-0.16, 0.12], [0.16, 0.12], [0.16, -0.12]] # 2D shape of the robot (little bit smaller than the real robot)
-footprint: [[-0.1, -0.05], [-0.1, 0.05], [0.1, 0.05], [0.1, -0.05]] # 2D shape of the robot (little bit smaller than the real robot)
+footprint: [[-0.16, -0.12], [-0.16, 0.12], [0.16, 0.12], [0.16, -0.12]] # 2D shape of the robot (little bit smaller than the real robot)
 
 plugins:
   - { name: static_layer, type: "costmap_2d::StaticLayer" }
