@@ -140,14 +140,14 @@ class arm_action:
     def go_and_grasp(self, target_in_arm_base: list):
         self.send_cmd_vel([0.0, 0.0, 0.0])
         self.grasp_pos(target_in_arm_base)
-        rospy.sleep(0.5)
+        rospy.sleep(1.5)
         rospy.loginfo("Place: reach the goal for placing.")
 
         self.close_gripper()
-        rospy.sleep(0.5)
+        rospy.sleep(0.25)
 
         self.close_gripper()
-        rospy.sleep(0.5)
+        rospy.sleep(0.25)
         self.reset_pos()
 
         self.send_cmd_vel([-0.3, 0.0, 0.0])

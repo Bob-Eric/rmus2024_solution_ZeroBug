@@ -25,7 +25,7 @@ class gamecore:
             "/image_processor_switch_mode", switch
         )
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_game_info)
-        rospy.sleep(1)
+        rospy.sleep(2)
 
         self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
@@ -50,7 +50,7 @@ class gamecore:
         """ gamecore logic: """
         self.observation()
         self.grasp_and_place()
-        self.align_res = self.align_res(AlignRequest.Reset, 0, 0)
+        self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.navigation_result = self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
