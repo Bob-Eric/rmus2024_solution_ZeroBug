@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from sympy import false
 import rospy
 import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
 from simple_pid import PID
 import tf2_ros
-import tf2_geometry_msgs
 from geometry_msgs.msg import Pose, TransformStamped, Vector3
 
 
@@ -163,7 +161,7 @@ class arm_action:
 
         self.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
-        rospy.sleep(2)
+        rospy.sleep(1.0)
         self.open_gripper()
         rospy.sleep(0.5)
 
