@@ -149,14 +149,26 @@ class gamecore:
         hbias_allow = 0.018  # 1.8cm horizontal bias is allowed
         for i in range(max_attempt):
             print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
+            # try place
             self.align_res = self.aligner(AlignRequest.Place, slot, layer)
-            self.navigation_result = self.navigation(PointName.Station_2, "")
+            # go to the front to check
+            self.navigation_result = self.navigation(PointName.Station_Front, "")
+            # if not in sight from the front, it must falls to the back
+            if not self.blockinfo_dict[block_id].in_cam:
+                print(f"Block {block_id} is not in sight from the front. Now go to the back.")
+                self.navigation_result = self.navigation(PointName.Station_Back, "")
+            # if not in sight from the back... How could it possible?! just return false
+            if not self.blockinfo_dict[block_id].in_cam:
+                print(f"Block {block_id} is not in sight from the back. What the fuck?! I quit.")
+                return False
+            # check if block's stacked well by horizontal bias
             hbias = self.get_hbias(block_id, slot)
             if self.get_layer(block_id) == layer and hbias < hbias_allow:
                 print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
                 return True
             else:
                 print(f"Result: hbias of {hbias}.")
+            # won't pick up the block at the last attempt
             if i < max_attempt - 1:
                 self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
         print(f"Max attempt reached. stack failed.")
