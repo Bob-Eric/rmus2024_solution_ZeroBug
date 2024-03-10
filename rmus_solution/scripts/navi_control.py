@@ -25,8 +25,9 @@ class PointName(IntEnum):
     Station_3 = 9
     Noticeboard = 10
     Park = 11
+    Station_Back = 12
 
-    End = 12
+    End = 13
 
 
 class router:
@@ -49,6 +50,7 @@ class router:
         PointName.Station_3: (1.18, 1.65, 0.00),
         PointName.Noticeboard: (0.2, 0.2, pi / 4),
         PointName.Park: (3.16, -0.795, 0.00),
+        PointName.Station_Back: (2.58, 1.80, pi),
     }
 
     def __init__(self) -> None:
