@@ -1,0 +1,8 @@
+<launch>
+    <node pkg="tf2_ros" type="static_transform_publisher"
+        name="camera_aligned_depth_to_color_frame_correct"
+        args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" />
+    <node pkg="tf2_ros" type="static_transform_publisher"
+        name="arm_base"
+        args="0.145 0 0.055 0 0 0 1  base_link   arm_base" />
+</launch>
