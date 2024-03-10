@@ -3,9 +3,9 @@
 
 import rospy
 from std_msgs.msg import UInt8MultiArray
-from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
-from manipulater import AlignRequest
-from navi_control import PointName, router
+from rmus_solution.srv import switch, setgoal, graspsignal
+from manipulator import AlignRequest
+from navi_control import PointName
 from img_processor import ModeRequese
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
 from geometry_msgs.msg import Point

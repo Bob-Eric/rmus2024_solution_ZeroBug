@@ -1,6 +1,6 @@
 !!python/object/new:dynamic_reconfigure.encoding.Config
 dictitems:
-  control_frequency: 10.0
+  control_frequency: 30.0
   Kp: 4.0
   Ki: 8.0
   Kd: 0.0
