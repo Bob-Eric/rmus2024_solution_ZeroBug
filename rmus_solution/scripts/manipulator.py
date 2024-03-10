@@ -55,8 +55,8 @@ class manipulator:
         self.Kp = 0.5
         self.Ki = 0.0
         self.Kd = 0.0
-        self.desired_cube_pos_base_link = [0.5, 0.0]
-        self.desired_tag_pos_base_link = [0.5, 0.0]
+        self.desired_cube_pos_arm_base = [0.5, 0.0]
+        self.desired_tag_pos_arm_base = [0.5, 0.0]
         ############### Dynamic params ###############
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -142,19 +142,18 @@ class manipulator:
 
         self.arm_act.preparation_for_grasp()
 
-        self.align_act.set_setpoint(self.desired_cube_pos_base_link)
+        self.align_act.set_setpoint(self.desired_cube_pos_arm_base)
 
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
 
-            measured_pos, _ = self.trans_cam_frame_to_target_frame(target_marker_pose)
-            cube_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
+            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
                 target_marker_pose, "arm_base"
             )
-            self.align_act.set_measured_point(measured_pos)
+            self.align_act.set_measured_point(marker_in_arm_base)
 
-            if self.arm_act.can_arm_grasp(cube_in_arm_base):
-                self.arm_act.go_and_grasp(cube_in_arm_base)
+            if self.arm_act.can_arm_grasp(marker_in_arm_base):
+                self.arm_act.go_and_grasp(marker_in_arm_base)
                 rospy.sleep(1.0)
                 if self.arm_act.has_grasped():
                     resp.res = True
@@ -205,20 +204,22 @@ class manipulator:
         if 1 <= place_layer <= 3:
             self.arm_act.preparation_for_place(place_layer)
         else:
-            rospy.logerr("place_layer should be 1, 2 or 3")
+            rospy.logwarn(f"Invalid layer: {place_layer}")
             resp.res = False
             resp.response = "Invalid layer"
             resp.error_code = ErrorCode.InvalidLayer
             rospy.logwarn(resp.response)
             return resp
 
-        self.align_act.set_setpoint(self.desired_tag_pos_base_link)
+        self.align_act.set_setpoint(self.desired_tag_pos_arm_base)
 
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
 
-            measured_pos, _ = self.trans_cam_frame_to_target_frame(target_marker_pose)
-            self.align_act.set_measured_point(measured_pos)
+            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
+                target_marker_pose, "arm_base"
+            )
+            self.align_act.set_measured_point(marker_in_arm_base)
             if self.align_act.is_near_setpoint(self.tag_goal_tolerance):
                 self.arm_act.go_and_place()
 
@@ -238,13 +239,13 @@ class manipulator:
 
     def dynamic_reconfigure_callback(self, config: dict, level: int):
         self.ros_rate = config["control_frequency"]
-        self.desired_cube_pos_base_link[0] = config["desired_cube_x"]
-        self.desired_cube_pos_base_link[1] = config["desired_cube_y"]
+        self.desired_cube_pos_arm_base[0] = config["desired_cube_x"]
+        self.desired_cube_pos_arm_base[1] = config["desired_cube_y"]
         self.Kp = config["Kp"]
         self.Ki = config["Ki"]
         self.Kd = config["Kd"]
-        self.desired_tag_pos_base_link[0] = config["desired_tag_x"]
-        self.desired_tag_pos_base_link[1] = config["desired_tag_y"]
+        self.desired_tag_pos_arm_base[0] = config["desired_tag_x"]
+        self.desired_tag_pos_arm_base[1] = config["desired_tag_y"]
         self.seperate_I_threshold = config["seperate_I_threshold"]
 
         self.align_act.set_pid_param(
