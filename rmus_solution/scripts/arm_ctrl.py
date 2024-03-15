@@ -10,6 +10,7 @@ from geometry_msgs.msg import Pose, TransformStamped, Vector3
 
 prefix = "[arm_ctrl]"
 
+
 class arm_action:
 
     def __init__(self):
@@ -231,6 +232,9 @@ class align_action:
         self.__pid_x.sample_time = sample_time
         self.__pid_y.sample_time = sample_time
 
+    def set_decay(self, decay: float):
+        self.__decay = decay
+
     def set_measured_point(self, measured_point: list):
         self.__measured_point = measured_point
 
@@ -250,8 +254,26 @@ class align_action:
 
         return [vel_x, vel_y, 0.0]
 
+    # x y theta
+    def set_target_state(self, target_state: list):
+        self.__target_state = target_state
+
+    def set_measured_state(self, measured_state: list):
+        self.__measured_state = measured_state
+
+    def __cal_custom_vel(self, measured_pos: list):
+        x = measured_pos[0]
+        y = measured_pos[1]
+        error = np.array(measured_pos) - np.array(self.__target_state)
+        vel_ang = self.__decay * error[2]
+        vel_x = self.__decay * error[0] + y * vel_ang
+        vel_y = self.__decay * error[1] - x * vel_ang
+        return [vel_x, vel_y, vel_ang]
+        ...
+
     def align(self):
-        vel = self.__cal_pid_vel(self.__measured_point)
+        # vel = self.__cal_pid_vel(self.__measured_point)
+        vel = self.__cal_custom_vel(self.__measured_state)
         self.__arm_action.send_cmd_vel(vel)
 
         # only check if robot is saturating for 2.5s

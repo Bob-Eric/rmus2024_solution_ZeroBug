@@ -20,7 +20,9 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
 
+
 prefix = "[manipulator]"
+
 
 class ErrorCode(IntEnum):
     Success = 0
@@ -148,10 +150,16 @@ class manipulator:
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
 
-            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
-                target_marker_pose, "arm_base"
+            marker_in_arm_base, marker_ang_in_arm_base = (
+                self.trans_cam_frame_to_target_frame(target_marker_pose, "arm_base")
             )
-            self.align_act.set_measured_point(marker_in_arm_base)
+            # self.align_act.set_measured_point(marker_in_arm_base)
+            measured_state = [
+                marker_in_arm_base[0],
+                marker_in_arm_base[1],
+                marker_ang_in_arm_base,
+            ]
+            self.align_act.set_measured_point(measured_state)
 
             if self.arm_act.can_arm_grasp(marker_in_arm_base):
                 self.arm_act.go_and_grasp(marker_in_arm_base)
@@ -264,8 +272,9 @@ class manipulator:
             "camera_aligned_depth_to_color_frame_correct",
             rospy.Time.now(),
         ):
-            rospy.logerr(prefix +
-                f"pick_and_place: cannot find transform between {target_frame} and camera_aligned_depth_to_color_frame_correct"
+            rospy.logerr(
+                prefix
+                + f"pick_and_place: cannot find transform between {target_frame} and camera_aligned_depth_to_color_frame_correct"
             )
             return None, None
         posestamped_in_cam = tf2_geometry_msgs.PoseStamped()
