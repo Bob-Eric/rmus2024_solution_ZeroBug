@@ -220,15 +220,29 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
-        self.align_act.set_setpoint(self.desired_tag_pos_arm_base)
+        # self.align_act.set_setpoint(self.desired_tag_pos_arm_base)
+
+        target_state = [
+            self.desired_tag_pos_arm_base[0],
+            self.desired_tag_pos_arm_base[1],
+            0,
+        ]
+        self.align_act.set_target_state(target_state)
 
         while not rospy.is_shutdown():
             target_marker_pose = self.current_marker_poses
 
-            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
-                target_marker_pose, "arm_base"
+            marker_in_arm_base, marker_ang_in_arm_base = (
+                self.trans_cam_frame_to_target_frame(target_marker_pose, "arm_base")
             )
-            self.align_act.set_measured_point(marker_in_arm_base)
+            # rospy.loginfo(marker_ang_in_arm_base)
+            measured_state = [
+                marker_in_arm_base[0],
+                marker_in_arm_base[1],
+                marker_ang_in_arm_base,
+            ]
+
+            self.align_act.set_measured_state(measured_state)
             if self.align_act.is_near_setpoint(self.tag_goal_tolerance):
                 self.arm_act.go_and_place()
 
@@ -300,7 +314,8 @@ class manipulator:
             ]
         )
         angle = sciR.from_quat(quat).as_euler("YXZ")[0]
-
+        # limit angle from -pi to pi
+        angle = np.floor((angle + np.pi) / (2 * np.pi)) * 2 * np.pi - angle
         return pos, angle
 
 

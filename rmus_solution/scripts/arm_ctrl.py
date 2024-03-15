@@ -200,6 +200,7 @@ class align_action:
         self.__base_link_pos_timer = rospy.Timer(
             rospy.Duration(2.5), self.__base_link_pos_callback
         )
+        self.__decay = 10
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -257,9 +258,11 @@ class align_action:
     # x y theta
     def set_target_state(self, target_state: list):
         self.__target_state = target_state
+        self.__setpoint = target_state[0:2]
 
     def set_measured_state(self, measured_state: list):
         self.__measured_state = measured_state
+        self.__measured_point = measured_state[0:2]
 
     def __cal_custom_vel(self, measured_pos: list):
         x = measured_pos[0]
