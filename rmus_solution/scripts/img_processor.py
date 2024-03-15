@@ -39,11 +39,15 @@ def pose_aruco_2_ros(rvec, tvec):
     aruco_pose_msg.orientation.w = r_quat[3]
     return aruco_pose_msg
 
+
 prefix = "[img_processor]"
 sysprint = print
+
+
 def print(*args, **kwargs):
     sysprint(prefix, end="")
     sysprint(*args, **kwargs)
+
 
 class Processor:
     def __init__(self, initial_mode=ModeRequese.DoNothing, verbose=True) -> None:
@@ -59,11 +63,11 @@ class Processor:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_message("/rtabmap/rgbd_image", RGBDImage, timeout=5.0)
-                rospy.loginfo(prefix + "Get topic /rtabmap/rgbd_image.")
+                rospy.wait_for_message("/camera/color/image_raw", Image, timeout=5.0)
+                rospy.loginfo(prefix + "Get topic /camera/color/image_raw.")
                 break
             except:
-                rospy.logwarn("Waiting for message /rtabmap/rgbd_image.")
+                rospy.logwarn("Waiting for message /camera/color/image_raw.")
                 continue
 
         while not rospy.is_shutdown():
@@ -73,7 +77,9 @@ class Processor:
                 )
                 rospy.loginfo(prefix + "Get topic /camera/color/camera_info.")
                 self.camera_matrix = np.array(camerainfo.K, "double").reshape((3, 3))
-                rospy.loginfo(prefix + "camera_matrix :\n {}".format(self.camera_matrix))
+                rospy.loginfo(
+                    prefix + "camera_matrix :\n {}".format(self.camera_matrix)
+                )
                 break
             except:
                 rospy.logwarn("Waiting for message /camera/color/camera_info.")
@@ -88,7 +94,7 @@ class Processor:
                 self.collapsed = False
                 rospy.logerr("The visualization window has collapsed!")
         rospy.Subscriber(
-            "/rtabmap/rgbd_image", RGBDImage, self.imageCallback, queue_size=1
+            "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
         )
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
@@ -96,23 +102,26 @@ class Processor:
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
-    def imageCallback(self, image: RGBDImage):
-        self.image = self.bridge.imgmsg_to_cv2(image.rgb, "bgr8")
-        self.depth_img = self.bridge.imgmsg_to_cv2(image.depth, "32FC1")
+    def imageCallback(self, image: Image):
+        self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
+        # self.depth_img = self.bridge.imgmsg_to_cv2(image.depth, "32FC1")
         self.this_image_time_ms = int(image.header.stamp.nsecs / 1e6) + int(
             1000 * (image.header.stamp.secs - self.start_time)
         )
         locked_current_mode = self.current_mode
 
         id_list, _, _, tvec_list, rvec_list = marker_detection(
-            self.image, self.camera_matrix, self.verbose,)
+            self.image,
+            self.camera_matrix,
+            self.verbose,
+        )
         if locked_current_mode != ModeRequese.DoNothing:
             ## update gameinfo (and publish)
             self.update_gameinfo(id_list, tvec_list)
             ## update blocks_info (and publish)
             self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
-        return 
+        return
 
     def depthCallback(self, image):
         self.depth_img = self.bridge.imgmsg_to_cv2(image, "32FC1")
@@ -128,7 +137,9 @@ class Processor:
         gameinfo = [0, 0, 0]
         ## quads of gameinfo are high, so y component in camera frame is small. (x, y axis
         ##  of camera frame points right and downwards respectively), typical value is around -0.31.
-        digit_list = [(id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.2]
+        digit_list = [
+            (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.2
+        ]
         if len(digit_list) != 3:
             # print(f"detected {len(digit_list)} digits in gameinfo board, not 3")
             return
@@ -143,7 +154,7 @@ class Processor:
         return
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
-        """ update blocks_info (block 1-6 and B, O, X) and publish it """
+        """update blocks_info (block 1-6 and B, O, X) and publish it"""
         ## filter out gameinfo quads (t[1] < -0.2)
         for i in reversed(range(len(id_list))):
             if tvec_list[i][1] < -0.2:
@@ -188,7 +199,7 @@ class Processor:
                 ]
 
                 ## TODO: test if there are blocks whose gpose differs a lot from last gpose
-                if self.blocks_info[i] is not None: # and id == 7:
+                if self.blocks_info[i] is not None:  # and id == 7:
                     last_gpose = self.blocks_info[i][1]
                     p1 = np.array(
                         (
@@ -205,8 +216,10 @@ class Processor:
                         )
                     )
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
-                    if np.linalg.norm(p1-p2) > 0.2:
-                        rospy.logwarn(f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection.")
+                    if np.linalg.norm(p1 - p2) > 0.2:
+                        rospy.logwarn(
+                            f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection."
+                        )
 
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:

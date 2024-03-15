@@ -1,7 +1,7 @@
 <launch>
 
     <arg name="rviz" default="true" />
-    <arg name="slam_method" default="rtab" doc="method type [rtab, carto]" />
+    <arg name="slam_method" default="carto" doc="method type [rtab, carto]" />
 
     <!-- Cartographer localization -->
     <include if="$(eval 'carto' in arg('slam_method'))"
