@@ -14,18 +14,33 @@ def preprocessing(frame):
         need to save warped images to the training set again
     """
     hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    boolImg = (
-        np.logical_and(
-            np.logical_and(
-                np.logical_or(hsvImg[:, :, 0] <= 30, hsvImg[:, :, 0] >= 130),
-                hsvImg[:, :, 1] >= 130,
-            ),
-            hsvImg[:, :, 2] >= 70,
-        )
-        * 255
-    ).astype(np.uint8)
-    # boolImg = (np.logical_and(np.logical_and(np.logical_or(hsvImg[:,:,0] <= 10 , hsvImg[:,:,0] >= 150) , hsvImg[:,:,1] >= 100) , hsvImg[:,:,2] >= 50) * 255).astype(np.uint8)
-    return boolImg, hsvImg
+
+    ## red channel minus blue channel
+    B, G, R = cv2.split(frame.astype(np.int16))
+    R += ( 1.5 * np.clip(R - G, 0, 255) ).astype(np.int16)
+    frame[:, :, 2] = np.clip(R, 0, 255).astype(np.uint8)
+    cv2.imshow("frame enhanced", frame)
+
+    grayImg = np.clip(R - B, 0, 255).astype(np.uint8)
+    # grayImg = cv2.GaussianBlur(grayImg, (5,5), 0)
+    cv2.imshow("grayImg", grayImg)
+
+    # hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # boolImg = np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 170) * (hsvImg[:, :, 1] >= 100) * (hsvImg[:, :, 2] >= 150)
+    # boolImg = boolImg.astype(np.uint8) * 255
+    boolImg = cv2.threshold(grayImg, 50, 255, cv2.THRESH_BINARY)[1]
+    cv2.imshow("boolImg", boolImg)
+
+    quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
+    # quads_aruco = [quad[:, ::-1, :] for quad in quads_aruco]
+    if len(quads_aruco) > 0:
+        print("--------------------\naruco find quads")
+    
+    classification_cnn(boolImg, quads_aruco)
+
+    frame_aruco = cv2.drawContours(frame, np.array(quads_aruco, dtype=int), -1, (0, 255, 0), 2)
+    cv2.imshow("frame_aruco", frame_aruco)
+    return grayImg, hsvImg
 
 
 from simple_digits_classification.simple_digits_classify import CNN_digits
@@ -33,9 +48,10 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-file_path = os.path.dirname(__file__)
+file_path = os.path.abspath(__file__)
+dir_path = os.path.dirname(file_path)
 model = CNN_digits(50, 50, 9)
-model.load_state_dict(torch.load(file_path + "/simple_digits_classification/model.pth"))
+model.load_state_dict(torch.load(dir_path + "/simple_digits_classification/model.pth"))
 model.eval()
 
 
@@ -194,6 +210,7 @@ def classification_cnn(grayImg, quads):
         ## save warped image
         warped_img_list.append(warped)
         idx, logits = classify(warped, is_white_digit=False)
+        ## pairs: (id, score)
         pairs = [(i+1, logit) for i, logit in enumerate(logits.reshape(-1))]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
         if pairs[0][1] - pairs[1][1] > 1000:
@@ -202,16 +219,16 @@ def classification_cnn(grayImg, quads):
             quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
-        # cv2.imshow(f"warped {i}", warped)
-        # cv2.waitKey(0)
-        # print(pairs)
+        cv2.imshow(f"warped {i}", warped)
+        cv2.waitKey(0)
+        print(pairs)
         ########## debug end ##########
     return quads_id, warped_img_list
 
 def get_custom_dict():
     custom_dict = aruco.Dictionary()
     custom_dict.markerSize = 5
-    custom_dict.maxCorrectionBits = 8
+    custom_dict.maxCorrectionBits = 15
     markar_byte_list = []
 
     marker_bits = np.array(
@@ -365,3 +382,27 @@ def marker_detection(
         [tvec_list[_] for _ in ids],
         [rvec_list[_] for _ in ids],
     )
+
+def test():
+    """ read image from rgb.avi and test marker_detection """
+    cap = cv2.VideoCapture("./rgb.avi")
+    cnt = 0
+    while(cap.isOpened()):
+        ret, frame = cap.read()
+        cnt += 1
+        if not ret:
+            break
+        if cnt < 800:
+            continue
+        cv2.imshow("frame", frame)
+        camera_matrix = np.array(
+           [[607.5924072265625, 0.0, 426.4002685546875],
+            [0.0, 606.0050048828125, 242.9524383544922],
+            [0.0, 0.0, 1.0]]).reshape((3, 3))
+        marker_detection(frame, camera_matrix, verbose=True)
+        if cv2.waitKey(0) & 0xFF == ord("q"):
+            break
+        # print(f"frame {cnt}")
+
+if __name__ == '__main__':
+    test()
