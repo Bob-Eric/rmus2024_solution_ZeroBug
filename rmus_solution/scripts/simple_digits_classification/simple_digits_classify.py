@@ -7,20 +7,21 @@ import os
 
 # 定义神经网络模型
 class CNN_digits(nn.Module):
-    def __init__(self, H_in, W_in, n_classes):
+    def __init__(self, C_in, H_in, W_in, n_classes):
         super(CNN_digits, self).__init__()
         torch.zeros(1, 1, H_in, W_in)
+        self.C_in = C_in
         self.H_in = H_in
         self.W_in = W_in
         self.n_classes = n_classes
-        self.norm = nn.BatchNorm2d(1)
-        self.conv1 = nn.Conv2d(1, 8, kernel_size=3)
+        self.norm = nn.BatchNorm2d(C_in)
+        self.conv1 = nn.Conv2d(C_in, 8, kernel_size=3)
         self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
         self.conv3 = nn.Conv2d(16, 32, kernel_size=5)
         self.conv3_drop = nn.Dropout2d()
         # calc fc1's input size
-        tmp = torch.zeros(1, 1, H_in, W_in)
+        tmp = torch.zeros(1, 3, H_in, W_in)
         tmp = self.norm(tmp)
         tmp = F.relu(F.max_pool2d(self.conv1(tmp), 2))
         tmp = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(tmp)), 2))
@@ -34,8 +35,9 @@ class CNN_digits(nn.Module):
         self.fc3 = nn.Linear(64, 9)
 
     def forward(self, x):
-        ## x: (batch_size, 1, H_in, W_in)
-        x = torch.Tensor(x).view(-1, 1, self.H_in, self.W_in)
+        ## x: (batch_size, C_in, H_in, W_in)
+        assert x.shape[-3:] == (self.C_in, self.H_in, self.W_in)
+        x = torch.Tensor(x).view(-1, self.C_in, self.H_in, self.W_in)
         batch_size = x.shape[0]
         x = self.norm(x)
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
@@ -64,7 +66,6 @@ def train(model:CNN_digits, device, train_loader, optimizer, epoch):
         loss = torch.mean(F.cross_entropy(output, target))
         loss.backward()
         optimizer.step()
-
     if epoch % 20 == 0:
         print(f'Train Epoch: {epoch}\tLoss: {loss.item():.6f}')
 
@@ -95,8 +96,7 @@ def main():
     # 定义数据加载器
     transform = transforms.Compose([
         transforms.Resize((50, 50)),
-        transforms.Grayscale(),
-        transforms.RandomRotation(10),
+        transforms.RandomRotation(20),
         transforms.ToTensor()
     ])
     train_data = datasets.ImageFolder(root='templates', transform=transform)
@@ -104,7 +104,7 @@ def main():
 
     # 初始化模型和优化器
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CNN_digits(50, 50, 9).to(device)
+    model = CNN_digits(C_in=3, H_in=50, W_in=50, n_classes=9).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # 开始训练
