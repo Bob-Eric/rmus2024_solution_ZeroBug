@@ -136,7 +136,11 @@ class Processor:
     def update_gameinfo(self, id_list, tvec_list):
         gameinfo = [0, 0, 0]
         ## quads of gameinfo are high, so y component in camera frame is small. (x, y axis
+<<<<<<< Updated upstream
         ##  of camera frame points right and downwards respectively), typical value is around -0.31.
+=======
+        ##  of camera frame points right and downwards respectively), typical value is around -0.26.
+>>>>>>> Stashed changes
         digit_list = [
             (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.2
         ]
@@ -147,7 +151,8 @@ class Processor:
         gameinfo = [id for (id, x) in digit_list]
         if self.detected_gameinfo is None:
             self.detected_gameinfo = gameinfo
-        assert tuple(self.detected_gameinfo) == tuple(gameinfo)
+        if tuple(self.detected_gameinfo) != tuple(gameinfo):
+            rospy.logerr(f"detected different gameinfo: {gameinfo}, expected: {self.detected_gameinfo}")
         ## publish gameinfo
         self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         print(f"gameinfo: {gameinfo}")

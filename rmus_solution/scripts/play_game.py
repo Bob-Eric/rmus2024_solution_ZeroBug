@@ -205,7 +205,7 @@ class gamecore:
             return -1
         block_info = self.blockinfo_dict[block_id]
         # block in layer 1 is at height of height_base
-        block_size, height_base = 0.05, 0.035
+        block_size, height_base = 0.05, -0.045
         layer = round((block_info.gpose.position.z - height_base) / block_size) + 1
         return layer
 
