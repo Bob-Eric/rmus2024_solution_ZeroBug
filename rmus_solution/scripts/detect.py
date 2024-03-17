@@ -351,16 +351,10 @@ def marker_detection(
             if quads_id[i] == 0:
                 continue
             bbox = cv2.boundingRect(quads[i])
+            x, y, z = tvec_list[i].flatten()
             try:
-                cv2.putText(
-                    frame,
-                    id2tag[quads_id[i]],
-                    (bbox[0], bbox[1]),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    2,
-                )
+                cv2.putText(frame, f"{id2tag[quads_id[i]]}", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                cv2.putText(frame, f"({x:.3f},{y:.3f},{z:.3f})", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             except:
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
