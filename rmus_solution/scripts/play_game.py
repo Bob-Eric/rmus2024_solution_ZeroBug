@@ -39,7 +39,10 @@ class gamecore:
 
         self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation_result = self.navigation(PointName.Noticeboard, "")
+        self.navigation_result = self.navigation(PointName.Noticeboard_1, "")
+        rospy.sleep(2)
+        self.navigation_result = self.navigation(PointName.Noticeboard_2, "")
+        rospy.sleep(2)
 
         while not rospy.is_shutdown():
             if self.gameinfo is not None:
@@ -61,6 +64,7 @@ class gamecore:
         self.observation()
         self.grasp_and_place()
         self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
+        self.observation()
         self.navigation_result = self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
@@ -96,12 +100,13 @@ class gamecore:
 
     def observation(self):
         print("----------observing----------")
-        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_0_Vp_2, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_1_Vp_2, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_1, "")
-        self.navigation_result = self.navigation(PointName.MiningArea_2_Vp_2, "")
+        targets = [
+            PointName.MiningArea_0_Vp_1, PointName.MiningArea_0_Vp_2, 
+            PointName.MiningArea_1_Vp_1, PointName.MiningArea_1_Vp_2, 
+            PointName.MiningArea_2_Vp_1, PointName.MiningArea_2_Vp_2]
+        for target in targets:
+            self.navigation_result = self.navigation(target, "")
+            rospy.sleep(3)
         self.observing = False
         print("----------done observing----------")
 
@@ -159,7 +164,7 @@ class gamecore:
 
     def stack(self, block_id: int, slot: int, layer: int):
         """stack the block to the given slot and layer"""
-        max_attempt = 3
+        max_attempt = 5
         hbias_allow = 0.018  # 1.8cm horizontal bias is allowed
         for i in range(max_attempt):
             print(

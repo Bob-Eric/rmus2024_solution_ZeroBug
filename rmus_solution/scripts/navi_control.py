@@ -23,12 +23,13 @@ class PointName(IntEnum):
     Station_1 = 7
     Station_2 = 8
     Station_3 = 9
-    Noticeboard = 10
-    Park = 11
-    Station_Front = 12
-    Station_Back = 13
+    Noticeboard_1 = 10
+    Noticeboard_2 = 11
+    Park = 12
+    Station_Front = 13
+    Station_Back = 14
 
-    End = 14
+    End = 15
 
 
 prefix = "[navi_control]"
@@ -52,7 +53,8 @@ class router:
         PointName.Station_1: (1.18, 1.91, 0.00),
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
-        PointName.Noticeboard: (0.2, 0.2, pi / 4),
+        PointName.Noticeboard_1: (0.2, 0.2, pi / 4),
+        PointName.Noticeboard_2: (0, 1.65, 0),
         PointName.Park: (3.16, -0.795, 0.00),
         PointName.Station_Front: (1.05, 1.55, pi / 12),
         PointName.Station_Back: (2.58, 1.80, pi),
