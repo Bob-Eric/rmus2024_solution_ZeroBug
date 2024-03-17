@@ -44,12 +44,12 @@ class gamecore:
         self.navigation_result = self.navigation(PointName.Noticeboard_2, "")
         rospy.sleep(2)
 
-        while not rospy.is_shutdown():
-            if self.gameinfo is not None:
-                break
-            else:
-                rospy.logwarn(prefix + "Waiting for gameinfo message.")
-            rospy.sleep(0.5)
+        # while not rospy.is_shutdown():
+        #     if self.gameinfo is not None:
+        #         break
+        #     else:
+        #         rospy.logwarn(prefix + "Waiting for gameinfo message.")
+        #     rospy.sleep(0.5)
 
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
         self.blockinfo_dict = {}
@@ -62,9 +62,14 @@ class gamecore:
 
         """ gamecore logic: """
         self.observation()
-        self.grasp_and_place()
-        self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
+        # self.grasp_and_place()
+        # self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.observation()
+
+        self.observation(True)
+
+        self.observation(True)
+
         self.navigation_result = self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
@@ -98,12 +103,19 @@ class gamecore:
         if gameinfo.data is not None:
             self.gameinfo = gameinfo
 
-    def observation(self):
+    def observation(self, reverse=False):
         print("----------observing----------")
         targets = [
-            PointName.MiningArea_0_Vp_1, PointName.MiningArea_0_Vp_2, 
-            PointName.MiningArea_1_Vp_1, PointName.MiningArea_1_Vp_2, 
-            PointName.MiningArea_2_Vp_1, PointName.MiningArea_2_Vp_2]
+            PointName.MiningArea_0_Vp_1,
+            PointName.MiningArea_0_Vp_2,
+            PointName.MiningArea_1_Vp_1,
+            PointName.MiningArea_1_Vp_2,
+            PointName.MiningArea_2_Vp_1,
+            PointName.MiningArea_2_Vp_2,
+        ]
+
+        if reverse:
+            targets = targets[::-1]
         for target in targets:
             self.navigation_result = self.navigation(target, "")
             rospy.sleep(3)

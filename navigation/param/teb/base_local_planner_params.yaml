@@ -27,7 +27,7 @@ TebLocalPlannerROS:
 
   footprint_model:
     type: "polygon"
-    vertices: [[-0.16, -0.11], [-0.16, 0.11], [0.16, 0.11], [0.16, -0.11]] # 2D shape of the robot
+    vertices: [[-0.14, -0.11], [-0.14, 0.11], [0.14, 0.11], [0.14, -0.11]] # 2D shape of the robot
 
   # GoalTolerance
   xy_goal_tolerance: 0.1
