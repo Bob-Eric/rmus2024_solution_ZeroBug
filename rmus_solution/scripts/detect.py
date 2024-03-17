@@ -123,7 +123,11 @@ def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
     )
     distort_coeffs = np.array([[0, 0, 0, 0]], dtype=np.float32)
     for idx, quad in enumerate(quads):
+        # model_image.shape: (4, 2)
         model_image = np.squeeze(quad).astype(np.float32)
+        h, w = np.max(model_image, axis=0) - np.min(model_image, axis=0)
+        if h / w > 1.8 or w / h > 1.8:
+            continue
         """ calculate the pose of the corner points by pnp solving """
         ret, rvec, tvec = cv2.solvePnP(
             model_object, model_image, camera_matrix, distort_coeffs
@@ -202,14 +206,14 @@ def classification_cnn(frame_cv, quads):
         pairs = [(i+1, round(logit.item(), 1)) for i, logit in enumerate(logits.reshape(-1))]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
         if pairs[0][1] - pairs[1][1] > 15:
-            quad_id = pairs[0][0] + 1
+            quad_id = pairs[0][0]
         else:
             quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
-        cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
-        cv2.waitKey(0)
-        print(pairs)
+        # cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        # print(pairs)
         ########## debug end ##########
     return quads_id
 
@@ -327,11 +331,7 @@ def marker_detection(
     quads_f = aruco_detection(frame, aruco_detector)
     quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
     """ simple cnn classifier """
-
-    # import time
-    # sta = time.time()
     quads_id = classification_cnn(frame, quads)
-    # print(f"cost: {time.time() - sta:.3f} sec")
 
     if verbose:
         # print(f"detected: {quads_id}")
@@ -385,15 +385,14 @@ def test():
             break
         if cnt < 800:
             continue
-        cv2.imshow("frame", frame)
         camera_matrix = np.array(
            [[607.5924072265625, 0.0, 426.4002685546875],
             [0.0, 606.0050048828125, 242.9524383544922],
             [0.0, 0.0, 1.0]]).reshape((3, 3))
-        marker_detection(frame, camera_matrix)
+        marker_detection(frame, camera_matrix, verbose=True)
+        cv2.imshow("frame", frame)
         if cv2.waitKey(0) & 0xFF == ord("q"):
             break
-        # print(f"frame {cnt}")
 
 if __name__ == '__main__':
     test()
