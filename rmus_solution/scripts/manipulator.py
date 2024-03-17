@@ -20,7 +20,9 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
 
+
 prefix = "[manipulator]"
+
 
 class ErrorCode(IntEnum):
     Success = 0
@@ -38,6 +40,11 @@ class ErrorCode(IntEnum):
     Fail = 6
 
 
+arm_base_frame = "arm_base"
+camera_frame = "camera_aligned_depth_to_color_frame_correct"
+base_link_frame = "base_link"
+
+
 class manipulator:
 
     def __init__(self) -> None:
@@ -48,8 +55,7 @@ class manipulator:
         self.image_time_now = 0
         self.desired_marker_id = 0
 
-        self.cube_goal_tolerance = 0.01
-        self.tag_goal_tolerance = 0.01
+        self.state_tolerance = [0.008, 0.008, 0.05]
 
         ############### Dynamic params ###############
         self.ros_rate = 10
@@ -143,17 +149,52 @@ class manipulator:
 
         self.arm_act.preparation_for_grasp()
 
-        self.align_act.set_setpoint(self.desired_cube_pos_arm_base)
+        # self.align_act.set_setpoint(self.desired_cube_pos_arm_base)
 
+        desired_pose_arm_base = Pose()
+        desired_pose_arm_base.position.x = self.desired_cube_pos_arm_base[0]
+        desired_pose_arm_base.position.y = self.desired_cube_pos_arm_base[1]
+        desired_pose_arm_base.position.z = 0.0
+        desired_pose_arm_base.orientation.x = 0.0
+        desired_pose_arm_base.orientation.y = 0.0
+        desired_pose_arm_base.orientation.z = 0.0
+        desired_pose_arm_base.orientation.w = 1.0
+
+        desidre_cube_pos_base_link, desired_tag_ang_base_link = self.transfer_frame(
+            desired_pose_arm_base,
+            source_frame=arm_base_frame,
+            target_frame=base_link_frame,
+        )
+
+        target_state = [
+            desidre_cube_pos_base_link[0],
+            desidre_cube_pos_base_link[1],
+            desired_tag_ang_base_link,
+        ]
+        self.align_act.set_target_state(target_state)
         while not rospy.is_shutdown():
-            target_marker_pose = self.current_marker_poses
+            marker_pose_in_cam = self.current_marker_poses
 
-            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
-                target_marker_pose, "arm_base"
+            marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
+                marker_pose_in_cam,
+                source_frame=camera_frame,
+                target_frame=base_link_frame,
             )
-            self.align_act.set_measured_point(marker_in_arm_base)
+            marker_in_arm_base, marker_ang_in_arm_base = self.transfer_frame(
+                marker_pose_in_cam,
+                source_frame=camera_frame,
+                target_frame=arm_base_frame,
+            )
+            # self.align_act.set_measured_point(marker_in_arm_base)
+            measured_state = [
+                marker_in_base_link[0],
+                marker_in_base_link[1],
+                marker_ang_in_base_link,
+            ]
+            self.align_act.set_measured_state(measured_state)
+            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
 
-            if self.arm_act.can_arm_grasp(marker_in_arm_base):
+            if self.arm_act.can_arm_grasp_sometime(marker_in_arm_base, 1.0):
                 self.arm_act.go_and_grasp(marker_in_arm_base)
                 rospy.sleep(1.0)
                 if self.arm_act.has_grasped():
@@ -212,16 +253,50 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
-        self.align_act.set_setpoint(self.desired_tag_pos_arm_base)
+        desired_pose_arm_base = Pose()
+        desired_pose_arm_base.position.x = self.desired_tag_pos_arm_base[0]
+        desired_pose_arm_base.position.y = self.desired_tag_pos_arm_base[1]
+        desired_pose_arm_base.position.z = 0.0
+        desired_pose_arm_base.orientation.x = 0.0
+        desired_pose_arm_base.orientation.y = 0.0
+        desired_pose_arm_base.orientation.z = 0.0
+        desired_pose_arm_base.orientation.w = 1.0
+
+        desidre_tag_pos_base_link, desired_tag_ang_base_link = self.transfer_frame(
+            desired_pose_arm_base,
+            source_frame=arm_base_frame,
+            target_frame=base_link_frame,
+        )
+
+        target_state = [
+            desidre_tag_pos_base_link[0],
+            desidre_tag_pos_base_link[1],
+            desired_tag_ang_base_link,
+        ]
+        self.align_act.set_target_state(target_state)
 
         while not rospy.is_shutdown():
-            target_marker_pose = self.current_marker_poses
+            marker_pose_in_cam = self.current_marker_poses
 
-            marker_in_arm_base, _ = self.trans_cam_frame_to_target_frame(
-                target_marker_pose, "arm_base"
+            marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
+                marker_pose_in_cam,
+                source_frame=camera_frame,
+                target_frame=base_link_frame,
             )
-            self.align_act.set_measured_point(marker_in_arm_base)
-            if self.align_act.is_near_setpoint(self.tag_goal_tolerance):
+
+            measured_state = [
+                marker_in_base_link[0],
+                marker_in_base_link[1],
+                marker_ang_in_base_link,
+            ]
+
+            # rospy.loginfo(f"target_state: {target_state}")
+            # rospy.loginfo(f"measured_state: {measured_state}")
+            # rospy.loginfo(f"vel: {self.arm_act.get_last_vel()}")
+
+            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
+            self.align_act.set_measured_state(measured_state)
+            if self.align_act.is_near_target_state_sometime(self.state_tolerance, 1.0):
                 self.arm_act.go_and_place()
 
                 resp.res = True
@@ -256,42 +331,45 @@ class manipulator:
 
         return config
 
-    def trans_cam_frame_to_target_frame(
-        self, pose_in_cam: Pose, target_frame="base_link"
+    def transfer_frame(
+        self,
+        pose_source: Pose,
+        source_frame,
+        target_frame,
     ):
         if not self.tfBuffer.can_transform(
             target_frame,
-            "camera_aligned_depth_to_color_frame_correct",
+            source_frame,
             rospy.Time.now(),
         ):
-            rospy.logerr(prefix +
-                f"pick_and_place: cannot find transform between {target_frame} and camera_aligned_depth_to_color_frame_correct"
+            rospy.logerr(
+                prefix
+                + f"pick_and_place: cannot find transform between {target_frame} and {source_frame}"
             )
             return None, None
-        posestamped_in_cam = tf2_geometry_msgs.PoseStamped()
-        posestamped_in_cam.header.stamp = rospy.Time.now()
-        posestamped_in_cam.header.frame_id = (
-            "camera_aligned_depth_to_color_frame_correct"
-        )
-        posestamped_in_cam.pose = pose_in_cam
-        posestamped_in_base = self.tfBuffer.transform(posestamped_in_cam, target_frame)
-        pose_in_base = posestamped_in_base.pose
+        posestamped_source = tf2_geometry_msgs.PoseStamped()
+        posestamped_source.header.stamp = rospy.Time.now()
+        posestamped_source.header.frame_id = source_frame
+        posestamped_source.pose = pose_source
+        posestamped_target = self.tfBuffer.transform(posestamped_source, target_frame)
+        pose_target = posestamped_target.pose
         pos = [
-            pose_in_base.position.x,
-            pose_in_base.position.y,
-            pose_in_base.position.z,
+            pose_target.position.x,
+            pose_target.position.y,
+            pose_target.position.z,
         ]
 
         quat = np.array(
             [
-                pose_in_cam.orientation.x,
-                pose_in_cam.orientation.y,
-                pose_in_cam.orientation.z,
-                pose_in_cam.orientation.w,
+                pose_source.orientation.x,
+                pose_source.orientation.y,
+                pose_source.orientation.z,
+                pose_source.orientation.w,
             ]
         )
         angle = sciR.from_quat(quat).as_euler("YXZ")[0]
-
+        # limit angle from -pi to pi
+        angle = np.floor((angle + np.pi) / (2 * np.pi)) * 2 * np.pi - angle
         return pos, angle
 
 
