@@ -6,75 +6,36 @@ import cv2
 import numpy as np
 import cv2.aruco as aruco
 
-def preprocessing(frame):
+def aruco_detection(frame, aruco_detector):
     """
-    Processing the image to get the binary image with HSV red filter
-    Note:
-        Be careful while modifying HSV filter range, you may
-        need to save warped images to the training set again
+    use aruco_detector to detect quads in frame
+    1. enhance red channel and subtract blue channel to get a gray image
+    2. apply aruco_detector.detectMarkers to the gray image to get quads
+    return:
+    `quads_aruco`: list of quad (np.array with shape (1, 4, 2)), counter-clockwise
     """
-    hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-    ## red channel minus blue channel
+    ## split channels
     B, G, R = cv2.split(frame.astype(np.int16))
+    ## red enhancement
     R += ( 1.5 * np.clip(R - G, 0, 255) ).astype(np.int16)
-    frame[:, :, 2] = np.clip(R, 0, 255).astype(np.uint8)
-    cv2.imshow("frame enhanced", frame)
-
     grayImg = np.clip(R - B, 0, 255).astype(np.uint8)
-    # grayImg = cv2.GaussianBlur(grayImg, (5,5), 0)
-    cv2.imshow("grayImg", grayImg)
 
-    # hsvImg = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    # boolImg = np.logical_or(hsvImg[:, :, 0] <= 10, hsvImg[:, :, 0] >= 170) * (hsvImg[:, :, 1] >= 100) * (hsvImg[:, :, 2] >= 150)
-    # boolImg = boolImg.astype(np.uint8) * 255
-    boolImg = cv2.threshold(grayImg, 50, 255, cv2.THRESH_BINARY)[1]
-    cv2.imshow("boolImg", boolImg)
+    # cv2.imshow("frame enhanced", frame_enhanced)
+    # cv2.imshow("grayImg", grayImg)
 
     quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
-    # quads_aruco = [quad[:, ::-1, :] for quad in quads_aruco]
-    if len(quads_aruco) > 0:
-        print("--------------------\naruco find quads")
+    ## convert to counter-clockwise (actually for warping)
+    quads_aruco = [quad[:, ::-1, :] for quad in quads_aruco]
     
-    classification_cnn(boolImg, quads_aruco)
+    ## show quads in enhanced frame
+    # if len(quads_aruco) > 0:
+    #     print("--------------------\naruco find quads")
+    # frame_enhanced = frame.copy()
+    # frame_enhanced[:, :, 2] = np.clip(R, 0, 255).astype(np.uint8)
+    # frame_aruco = cv2.drawContours(frame_enhanced, np.array(quads_aruco, dtype=int), -1, (0, 255, 0), 2)
+    # cv2.imshow("frame_aruco", frame_aruco)
 
-    frame_aruco = cv2.drawContours(frame, np.array(quads_aruco, dtype=int), -1, (0, 255, 0), 2)
-    cv2.imshow("frame_aruco", frame_aruco)
-    return grayImg, hsvImg
-
-
-from simple_digits_classification.simple_digits_classify import CNN_digits
-import torch
-from torch import nn
-import torch.nn.functional as F
-
-file_path = os.path.abspath(__file__)
-dir_path = os.path.dirname(file_path)
-model = CNN_digits(50, 50, 9)
-model.load_state_dict(torch.load(dir_path + "/simple_digits_classification/model.pth"))
-model.eval()
-
-
-def classify(image, is_white_digit=True):
-    """
-    Input:
-        `image`: grayscale image. (h, w)
-        `is_white_digit`: if the digit is white on black background, set it to True, otherwise False
-    Output:
-        `idx`: classified result. [0, 1, 2, 3, 4, 5] => block 1-6; 6-8 => block B, O, X; -1: unknown
-        `logits`: raw output of the model, softmax(logits) is the probability of each class
-    TODO: find more 'unknown' cases and add them to the training set
-    """
-    global model
-    # if black digit on white background, invert the image
-    if not is_white_digit:
-        image = cv2.bitwise_not(image)
-
-    image = cv2.resize(image, (50, 50))
-    x = torch.tensor(image).float().unsqueeze(0).unsqueeze(0)
-    logits = model(x).detach()
-    idx = torch.argmax(logits, dim=1).item()
-    return idx, logits
+    return quads_aruco
 
 def quads_detection(grayImg, area_thresh=225):
     """
@@ -194,36 +155,63 @@ def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
         indices.append(idx)
     return quads_prj, tvec_list, rvec_list, area_list, indices
 
-def classification_cnn(grayImg, quads):
-    """ use cnn to classify the digit, works better than template matching """
-    quads_id = []
-    warped_img_list = []
 
+from simple_digits_classification.simple_digits_classify import CNN_digits
+import torch
+from torch import nn
+import torch.nn.functional as F
+
+file_path = os.path.abspath(__file__)
+dir_path = os.path.dirname(file_path)
+model = CNN_digits(C_in=3, H_in=50, W_in=50, n_classes=9)
+model.load_state_dict(torch.load(dir_path + "/simple_digits_classification/model.pth"))
+model.eval()
+
+def classification_cnn(frame_cv, quads):
+    """
+    use cnn to classify the digit, works better than template matching
+    Note: the input frame_cv is in opencv format
+        opencv format: 0-255, (h, w, 3), BGR
+        torch format: 0.0-1.0, (3, H_in, W_in), RGB
+    """
+    global model
+    h, w = model.H_in, model.W_in
+
+    quads_id = []
+    if len(quads) == 0:
+        return quads_id
+
+    ## convert opencv image format to "torch format" (consistent with how transform.Compose() does in traing)
+    frame = cv2.cvtColor(frame_cv, cv2.COLOR_BGR2RGB).astype(np.float32) / 256.0
+    dst = np.array(
+        [[0, 0], [0, h - 1], [w - 1, h - 1], [w - 1, 0]], dtype=np.float32
+    )
+    warped_list = []
     for i in range(len(quads)):
         src = quads[i].astype(np.float32)
-        l = 50
-        dst = np.array(
-            [[0, 0], [0, l - 1], [l - 1, l - 1], [l - 1, 0]], dtype=np.float32
-        )
         M = cv2.getPerspectiveTransform(src, dst)  # 获取变换矩阵
-        warped = cv2.warpPerspective(grayImg, M, (l, l))  # 进行变换
-        ## save warped image
-        warped_img_list.append(warped)
-        idx, logits = classify(warped, is_white_digit=False)
+        warped = cv2.warpPerspective(frame, M, (h, w))  # 进行变换
+        warped_list.append(warped)
+    X = np.stack(warped_list, axis=0) 
+    ## (B, H_in, W_in, 3) => (B, 3, H_in, W_in)
+    X = torch.tensor(X, dtype=torch.float).permute(0, 3, 1, 2)
+    ## get logits
+    logits_list = model(X).detach()
+    for i, logits in enumerate(logits_list):
         ## pairs: (id, score)
-        pairs = [(i+1, logit) for i, logit in enumerate(logits.reshape(-1))]
+        pairs = [(i+1, round(logit.item(), 1)) for i, logit in enumerate(logits.reshape(-1))]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
-        if pairs[0][1] - pairs[1][1] > 1000:
-            quad_id = idx + 1
+        if pairs[0][1] - pairs[1][1] > 15:
+            quad_id = pairs[0][0] + 1
         else:
             quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
-        cv2.imshow(f"warped {i}", warped)
+        cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
         cv2.waitKey(0)
         print(pairs)
         ########## debug end ##########
-    return quads_id, warped_img_list
+    return quads_id
 
 def get_custom_dict():
     custom_dict = aruco.Dictionary()
@@ -335,13 +323,16 @@ def marker_detection(
     Output:
         quads_id, quads, area_list, tvec_list, rvec_list
     """
-    boolImg, _ = preprocessing(frame)
-
-    """ opencv morphological detector """
-    quads_f = quads_detection(boolImg, area_thresh=300)
+    global aruco_detector
+    quads_f = aruco_detection(frame, aruco_detector)
     quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
     """ simple cnn classifier """
-    quads_id, _ = classification_cnn(boolImg, quads)
+
+    # import time
+    # sta = time.time()
+    quads_id = classification_cnn(frame, quads)
+    # print(f"cost: {time.time() - sta:.3f} sec")
+
     if verbose:
         # print(f"detected: {quads_id}")
         id2tag = {
@@ -399,7 +390,7 @@ def test():
            [[607.5924072265625, 0.0, 426.4002685546875],
             [0.0, 606.0050048828125, 242.9524383544922],
             [0.0, 0.0, 1.0]]).reshape((3, 3))
-        marker_detection(frame, camera_matrix, verbose=True)
+        marker_detection(frame, camera_matrix)
         if cv2.waitKey(0) & 0xFF == ord("q"):
             break
         # print(f"frame {cnt}")
