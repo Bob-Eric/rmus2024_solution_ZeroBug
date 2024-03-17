@@ -379,14 +379,20 @@ def test():
             break
         if cnt < 800:
             continue
+        elif cnt > 1600:
+            break
         camera_matrix = np.array(
            [[607.5924072265625, 0.0, 426.4002685546875],
             [0.0, 606.0050048828125, 242.9524383544922],
             [0.0, 0.0, 1.0]]).reshape((3, 3))
         marker_detection(frame, camera_matrix, verbose=True)
+    
         cv2.imshow("frame", frame)
         if cv2.waitKey(0) & 0xFF == ord("q"):
             break
+    
 
 if __name__ == '__main__':
     test()
+    # import cProfile
+    # cProfile.run("test()", "prof")
