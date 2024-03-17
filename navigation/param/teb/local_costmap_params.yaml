@@ -14,7 +14,10 @@ local_costmap:
   origin_x: 0
   origin_y: 0
 
-
+  plugins:
+    - { name: obstacle_layer, type: "costmap_2d::ObstacleLayer" }
+    - { name: static_layer, type: "costmap_2d::StaticLayer" }
+    - { name: inflation_layer, type: "costmap_2d::InflationLayer" }
 
   inflation_layer:
     enabled: true

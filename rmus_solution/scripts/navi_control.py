@@ -25,11 +25,14 @@ class PointName(IntEnum):
     Station_3 = 9
     Noticeboard = 10
     Park = 11
-    Station_Back = 12
+    Station_Front = 12
+    Station_Back = 13
 
-    End = 13
+    End = 14
+
 
 prefix = "[navi_control]"
+
 
 class router:
     """
@@ -51,6 +54,7 @@ class router:
         PointName.Station_3: (1.18, 1.65, 0.00),
         PointName.Noticeboard: (0.2, 0.2, pi / 4),
         PointName.Park: (3.16, -0.795, 0.00),
+        PointName.Station_Front: (1.05, 1.55, pi / 12),
         PointName.Station_Back: (2.58, 1.80, pi),
     }
 
@@ -123,7 +127,9 @@ class router:
             r = rospy.Rate(10)
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
-                    rospy.loginfo(prefix + "Reach Goal {}!".format(self.Points[self.mission][0]))
+                    rospy.loginfo(
+                        prefix + "Reach Goal {}!".format(self.Points[self.mission][0])
+                    )
                     resp.res = True
                     resp.response = "Accomplish!"
                     self.mission = PointName.End

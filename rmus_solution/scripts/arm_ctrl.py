@@ -10,6 +10,7 @@ from geometry_msgs.msg import Pose, TransformStamped, Vector3
 
 prefix = "[arm_ctrl]"
 
+
 class arm_action:
 
     def __init__(self):
@@ -24,8 +25,10 @@ class arm_action:
         )
         self.movement_start_time = 0.0
         self.movement_end_time = 0.0
-        self.movement_saturat_time = 0.0
+        self.movement_active_time = 0.0
         self.__vel_old = [0.0, 0.0, 0.0]
+        self.__can_arm_grasp_old = False
+        # self.__can_arm_grasp_start_time = 0.0
 
     def __cmd_vel_callback(self, msg: Twist):
         vel = [msg.linear.x, msg.linear.y, msg.angular.z]
@@ -33,11 +36,11 @@ class arm_action:
 
         # only checks for the movement in the x-y plane
         if (
-            np.linalg.norm(vel[0:2]) >= 0.5
-            and np.linalg.norm(self.__vel_old[0:2]) < 0.5
+            np.linalg.norm(vel[0:2]) >= 0.2
+            and np.linalg.norm(self.__vel_old[0:2]) < 0.2
         ):
-            # get the time when the movement saturates
-            self.movement_saturat_time = rospy.get_time()
+            # get the time when the movement is active
+            self.movement_active_time = rospy.get_time()
         if (
             np.linalg.norm(vel[0:2]) < 0.1
             and np.linalg.norm(self.__vel_old[0:2]) >= 0.1
@@ -57,6 +60,20 @@ class arm_action:
         # 1 for grasped something, 0 for not
         self.__gripper_state = msg.x
 
+    def can_arm_grasp_sometime(self, target_in_arm_base: list, timeout: float):
+        satisfy = self.can_arm_grasp(target_in_arm_base)
+        if satisfy and not self.__can_arm_grasp_old:
+            # check if the robot can grasp for the first time
+            self.__can_arm_grasp_start_time = rospy.get_time()
+            ...
+        self.__can_arm_grasp_old = satisfy
+
+        if satisfy and rospy.get_time() - self.__can_arm_grasp_start_time > timeout:
+            # check if the robot can grasp for timeout
+            return True
+        else:
+            return False
+
     def can_arm_grasp(self, target_in_arm_base: list):
         if target_in_arm_base is None:
             return False
@@ -72,8 +89,8 @@ class arm_action:
     def has_grasped(self):
         return self.__gripper_state == 1
 
-    def is_vel_saturating(self):
-        return np.linalg.norm(self.__vel[0:2]) >= 0.5
+    def is_vel_active(self):
+        return np.linalg.norm(self.__vel[0:2]) >= 0.2
 
     def send_cmd_vel(self, vel: list):
         twist = Twist()
@@ -84,6 +101,7 @@ class arm_action:
         twist.angular.x = 0.0
         twist.angular.y = 0.0
         self.__cmd_vel_pub.publish(twist)
+        rospy.loginfo(prefix + f"send cmd_vel: {vel}")
 
     def get_last_vel(self):
         return self.__vel
@@ -184,6 +202,8 @@ class arm_action:
         rospy.sleep(0.5)
         rospy.loginfo(prefix + "First align then place")
         self.place_pos(place_layer)
+        rospy.sleep(2.0)
+        rospy.loginfo(prefix + "adjusting arm pose for place.")
         ...
 
 
@@ -199,6 +219,10 @@ class align_action:
         self.__base_link_pos_timer = rospy.Timer(
             rospy.Duration(2.5), self.__base_link_pos_callback
         )
+        self.__decay = 3
+        self.__decay_near = 9
+        self.__decay_seperate_dist = 0.1
+        self.__is_near_target_state_old = False
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -231,8 +255,11 @@ class align_action:
         self.__pid_x.sample_time = sample_time
         self.__pid_y.sample_time = sample_time
 
+    def set_decay(self, decay: float):
+        self.__decay = decay
+
     def set_measured_point(self, measured_point: list):
-        self.__measured_point = measured_point
+        self.__measured_state = measured_point
 
     def __cal_pid_vel(self, measured_pos: list):
         if (
@@ -250,14 +277,39 @@ class align_action:
 
         return [vel_x, vel_y, 0.0]
 
+    # x y theta
+    def set_target_state(self, target_state: list):
+        self.__target_state = target_state
+        self.__setpoint = target_state[0:2]
+
+    def set_measured_state(self, measured_state: list):
+        self.__measured_state = measured_state
+
+    def __cal_custom_vel(self, measured_pos: list):
+        x = measured_pos[0]
+        y = measured_pos[1]
+        error = np.array(measured_pos) - np.array(self.__target_state)
+
+        decay = 0
+        if np.linalg.norm(error[0:2]) > self.__decay_seperate_dist:
+            decay = self.__decay
+        else:
+            decay = self.__decay_near
+
+        vel_ang = decay * error[2]
+        vel_x = decay * error[0] + y * vel_ang
+        vel_y = decay * error[1] - x * vel_ang
+        return [vel_x, vel_y, vel_ang]
+
     def align(self):
-        vel = self.__cal_pid_vel(self.__measured_point)
+        # vel = self.__cal_pid_vel(self.__measured_point)
+        vel = self.__cal_custom_vel(self.__measured_state)
         self.__arm_action.send_cmd_vel(vel)
 
         # only check if robot is saturating for 2.5s
         if (
-            self.__arm_action.is_vel_saturating()
-            and rospy.get_time() - self.__arm_action.movement_saturat_time > 2.5
+            self.__arm_action.is_vel_active()
+            and rospy.get_time() - self.__arm_action.movement_active_time > 2.5
         ):
             if self.__delta_pos < 0.05:
                 # robot is stuck
@@ -272,17 +324,34 @@ class align_action:
 
         return True
 
-    def is_near_setpoint(self, tolerance: float):
-        satisfy = (
-            np.linalg.norm(
-                np.array(self.__measured_point[0:2]) - np.array(self.__setpoint)
-            )
-            <= tolerance
+    def is_near_target_state_sometime(self, tolerance: list, timeout: float):
+        satisfy = self.is_near_target_state(tolerance)
+        if satisfy and not self.__is_near_target_state_old:
+            # check if the robot is near the target state for the first time
+            self.__near_target_state_start_time = rospy.get_time()
+            ...
+
+        self.__is_near_target_state_old = satisfy
+
+        if satisfy and rospy.get_time() - self.__near_target_state_start_time > timeout:
+            # check if the robot is near the target state for timeout
+            return True
+        else:
+            return False
+
+    def is_near_target_state(self, tolerance: list):
+        satisfy_xy = np.linalg.norm(
+            np.array(self.__measured_state[0:2]) - np.array(self.__target_state[0:2])
+        ) <= np.linalg.norm(tolerance[0:2])
+
+        satisfy_ang = abs(self.__measured_state[2] - self.__target_state[2]) <= abs(
+            tolerance[2]
         )
+        satisfy = satisfy_xy and satisfy_ang
         return satisfy
 
     def is_setpoint_too_faraway(self):
-        return self.__measured_point[0] <= -0.5 or abs(self.__measured_point[1]) >= 2.0
+        return self.__measured_state[0] <= -0.5 or abs(self.__measured_state[1]) >= 2.0
 
 
 if __name__ == "__main__":
