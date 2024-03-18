@@ -53,3 +53,4 @@ CATKIN_IGNORE
 **/.vscode/**
 
 __pycache__/
+*.bk

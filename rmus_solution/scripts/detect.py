@@ -20,7 +20,6 @@ def aruco_detection(frame, aruco_detector):
     R += ( 1.5 * np.clip(R - G, 0, 255) ).astype(np.int16)
     grayImg = np.clip(R - B, 0, 255).astype(np.uint8)
 
-    # cv2.imshow("frame enhanced", frame_enhanced)
     # cv2.imshow("grayImg", grayImg)
 
     quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
@@ -36,62 +35,6 @@ def aruco_detection(frame, aruco_detector):
     # cv2.imshow("frame_aruco", frame_aruco)
 
     return quads_aruco
-
-def quads_detection(grayImg, area_thresh=225):
-    """
-    Detect quads (warped block surfaces) in grayImg
-    
-    `area_thresh`: threshold to filter out small contours, like noise and quads far away
-        set it to 50 => can detect quads 2m away but sometimes may confuse with "6" and "B"
-        set it to 225 => can only detect quads 1.5m away but detected quads are bigger and more clear,
-        for which classifier works better (nearly 100% acc).
-    """
-    quads_f = []
-
-    contours, hierarchy = cv2.findContours(
-        grayImg, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
-    )
-    contours_filt = []
-    for i, c in enumerate(contours):
-        child_idx = hierarchy[0, i, 2]
-        ## must have digits inside
-        if child_idx == -1:  # or cv2.contourArea(contours[child_idx]) < 10:
-            continue
-        if cv2.contourArea(c) < area_thresh:
-            continue
-        contours_filt.append(c)
-        # print("contour added")
-        # cv2.drawContours(rgbImage, [c], -1, (255, 0, 0), 3)
-        # cv2.imshow("rgbImage", rgbImage)
-        # cv2.waitKey(0)
-
-    quads_aruco, _, _ = aruco_detector.detectMarkers(cv2.bitwise_not(grayImg))
-    quads_aruco = np.squeeze(quads_aruco)
-    if len(quads_aruco) == 0:
-        return []
-
-    for i, contour in enumerate(contours_filt):
-        x, y, w, h = cv2.boundingRect(contour)
-        if h / w > 1.8 or w / h > 1.8:
-            continue
-        peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) != 4:
-            continue
-
-        """ aruco neighbour filter """
-        ## quads_aruco: (n, 4, 2), approx: (4, 1, 2)
-        approx = np.squeeze(approx)
-        diffs = np.squeeze(quads_aruco - approx) ## diff shape of (n, 4, 2)
-        assert diffs.shape[-2:] == (4, 2)
-        cent_diffs = np.mean(diffs, axis=1)
-        cent_dists = [np.linalg.norm(cent_diff) for cent_diff in cent_diffs]
-        if min(cent_dists) > 10:     ## min distance >= 5 pixels
-            # print("aruco filter out a quad.")
-            continue
-        """ warped rect found """
-        quads_f.append(approx.astype(float))
-    return quads_f
 
 def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
     """
@@ -126,7 +69,7 @@ def quads_reconstruction(quads, camera_matrix, height_range=(-10.0, 10.0)):
         # model_image.shape: (4, 2)
         model_image = np.squeeze(quad).astype(np.float32)
         h, w = np.max(model_image, axis=0) - np.min(model_image, axis=0)
-        if h / w > 1.8 or w / h > 1.8:
+        if h / w > 1.8 or w / h > 1.8 or h < 20 or w < 20:
             continue
         """ calculate the pose of the corner points by pnp solving """
         ret, rvec, tvec = cv2.solvePnP(
@@ -200,12 +143,13 @@ def classification_cnn(frame_cv, quads):
     ## (B, H_in, W_in, 3) => (B, 3, H_in, W_in)
     X = torch.tensor(X, dtype=torch.float).permute(0, 3, 1, 2)
     ## get logits
-    logits_list = model(X).detach()
+    with torch.no_grad():
+        logits_list = model(X)
     for i, logits in enumerate(logits_list):
         ## pairs: (id, score)
         pairs = [(i+1, round(logit.item(), 1)) for i, logit in enumerate(logits.reshape(-1))]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
-        if pairs[0][1] - pairs[1][1] > 15:
+        if pairs[0][1] - pairs[1][1] > 10:
             quad_id = pairs[0][0]
         else:
             quad_id = 0
