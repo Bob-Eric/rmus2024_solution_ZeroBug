@@ -54,3 +54,4 @@ CATKIN_IGNORE
 
 __pycache__/
 *.bk
+*.avi

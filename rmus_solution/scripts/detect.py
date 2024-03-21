@@ -149,22 +149,23 @@ def classification_cnn(frame_cv, quads):
         ## pairs: (id, score)
         pairs = [(i+1, round(logit.item(), 1)) for i, logit in enumerate(logits.reshape(-1))]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
-        if pairs[0][1] - pairs[1][1] > 10:
+        if pairs[0][1] - pairs[1][1] > 12:
             quad_id = pairs[0][0]
         else:
             quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
-        # cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
-        # print(pairs)
+        cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
+        cv2.waitKey(0)
+        print(pairs)
         ########## debug end ##########
     return quads_id
 
 def get_custom_dict():
     custom_dict = aruco.Dictionary()
     custom_dict.markerSize = 5
-    custom_dict.maxCorrectionBits = 15
+    ## TODO: check what is maxCorrectionBits and how it affects detection
+    custom_dict.maxCorrectionBits = 5
     markar_byte_list = []
 
     marker_bits = np.array(
@@ -297,8 +298,8 @@ def marker_detection(
             bbox = cv2.boundingRect(quads[i])
             x, y, z = tvec_list[i].flatten()
             try:
-                cv2.putText(frame, f"{id2tag[quads_id[i]]}", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                cv2.putText(frame, f"({x:.3f},{y:.3f},{z:.3f})", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(frame, f"{id2tag[quads_id[i]]}", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                # cv2.putText(frame, f"({x:.3f},{y:.3f},{z:.3f})", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             except:
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
@@ -314,17 +315,15 @@ def marker_detection(
 
 def test():
     """ read image from rgb.avi and test marker_detection """
-    cap = cv2.VideoCapture("./rgb.avi")
+    cap = cv2.VideoCapture("./zerobug-2.avi")
     cnt = 0
     while(cap.isOpened()):
         ret, frame = cap.read()
         cnt += 1
         if not ret:
             break
-        if cnt < 800:
+        if cnt < 1500:
             continue
-        elif cnt > 1600:
-            break
         camera_matrix = np.array(
            [[607.5924072265625, 0.0, 426.4002685546875],
             [0.0, 606.0050048828125, 242.9524383544922],
@@ -334,6 +333,7 @@ def test():
         cv2.imshow("frame", frame)
         if cv2.waitKey(0) & 0xFF == ord("q"):
             break
+        print(cnt)
     
 
 if __name__ == '__main__':
