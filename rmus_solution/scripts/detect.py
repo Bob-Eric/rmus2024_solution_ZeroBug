@@ -114,7 +114,7 @@ model = CNN_digits(C_in=3, H_in=50, W_in=50, n_classes=9)
 model.load_state_dict(torch.load(dir_path + "/simple_digits_classification/model.pth"))
 model.eval()
 
-def classification_cnn(frame_cv, quads):
+def classification_cnn(frame_cv, quads, debug=False):
     """
     use cnn to classify the digit, works better than template matching
     Note: the input frame_cv is in opencv format
@@ -155,9 +155,10 @@ def classification_cnn(frame_cv, quads):
             quad_id = 0
         quads_id.append(quad_id)
         ########## for debug ##########
-        cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
-        cv2.waitKey(0)
-        print(pairs)
+        if debug:
+            cv2.imshow(f"id: {pairs[0][0]}, margin: {pairs[0][1] - pairs[1][1]:.1g}", cv2.cvtColor(warped_list[i], cv2.COLOR_RGB2BGR))
+            cv2.waitKey(0)
+            print(pairs)
         ########## debug end ##########
     return quads_id
 
@@ -260,7 +261,8 @@ def marker_detection(
     frame,
     camera_matrix,
     verbose=True,
-    height_range=(-10, 10)
+    height_range=(-10, 10),
+    debug=False
 ):
     """
     detect markers and poses of quads in RGB image `frame`
@@ -276,7 +278,7 @@ def marker_detection(
     quads_f = aruco_detection(frame, aruco_detector)
     quads, tvec_list, rvec_list, area_list, _ = quads_reconstruction(quads_f, camera_matrix, height_range=height_range)
     """ simple cnn classifier """
-    quads_id = classification_cnn(frame, quads)
+    quads_id = classification_cnn(frame, quads, debug=debug)
 
     if verbose:
         # print(f"detected: {quads_id}")
@@ -328,7 +330,7 @@ def test():
            [[607.5924072265625, 0.0, 426.4002685546875],
             [0.0, 606.0050048828125, 242.9524383544922],
             [0.0, 0.0, 1.0]]).reshape((3, 3))
-        marker_detection(frame, camera_matrix, verbose=True)
+        marker_detection(frame, camera_matrix, verbose=True, debug=True)
     
         cv2.imshow("frame", frame)
         if cv2.waitKey(0) & 0xFF == ord("q"):
