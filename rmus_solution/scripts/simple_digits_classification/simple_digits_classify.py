@@ -120,7 +120,7 @@ def main():
 
     # 开始训练
     if not os.path.exists("model.pth"):
-        for epoch in range(1, 1600 + 1):
+        for epoch in range(1, 1200 + 1):
             train(model, device, train_loader, optimizer, epoch)
             if epoch % 200 == 0:
                 torch.save(model.state_dict(), "model.pth")
