@@ -42,7 +42,7 @@ TebLocalPlannerROS:
   inflaion_dist: 0.1 # not fine-tuned
 
   # Optimization
-  no_inner_iterations: 5 # may be enough
+  no_inner_iterations: 8 # may be enough
   no_outer_iterations: 4 # may be enough
   optimization_activate: True
   optimization_verbose: False
@@ -68,7 +68,7 @@ TebLocalPlannerROS:
   enable_homotopy_class_planning: True
   enable_multithreading: True
   simple_exploration: False
-  max_number_classes: 6
+  max_number_classes: 8
   selection_cost_hysteresis: 1.0
   selection_obst_cost_scale: 1.0
   selection_alternative_time_cost: False
