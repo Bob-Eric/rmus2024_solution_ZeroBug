@@ -317,14 +317,14 @@ def marker_detection(
 
 def test():
     """ read image from rgb.avi and test marker_detection """
-    cap = cv2.VideoCapture("./zerobug-2.avi")
+    cap = cv2.VideoCapture("./official-2.avi")
     cnt = 0
     while(cap.isOpened()):
         ret, frame = cap.read()
         cnt += 1
         if not ret:
             break
-        if cnt < 1500:
+        if cnt < 1000:
             continue
         camera_matrix = np.array(
            [[607.5924072265625, 0.0, 426.4002685546875],
@@ -333,7 +333,7 @@ def test():
         marker_detection(frame, camera_matrix, verbose=True, debug=True)
     
         cv2.imshow("frame", frame)
-        if cv2.waitKey(0) & 0xFF == ord("q"):
+        if cv2.waitKey(10) & 0xFF == ord("q"):
             break
         print(cnt)
     
