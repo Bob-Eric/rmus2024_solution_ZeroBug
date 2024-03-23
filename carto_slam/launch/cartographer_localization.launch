@@ -6,7 +6,14 @@
   <include file="$(find ira_laser_tools)/launch/merge_rgbd_lidar_scan.launch" />
 
   <arg name="configuration_basename" default="cartographer_2d_localization.lua" />
-  <arg name="map_name" default="map" />
+
+
+  <arg name="ROBOT_MODE" default="$(env ENV_ROBOT_MODE)" />
+
+  <arg if="$(eval 'real' in arg('ROBOT_MODE'))" name="map_name" default="map_real" />
+  <arg if="$(eval 'sim' in arg('ROBOT_MODE'))" name="map_name" default="map" />
+
+  <!-- <arg name="map_name" default="map_real" /> -->
   <arg name="pbstream_file" value="$(find carto_slam)/maps/$(arg map_name).pbstream" />
   <arg name="configuration_directory" default="$(find carto_slam)/param" />
   <node name="cartographer_node" pkg="cartographer_ros"
