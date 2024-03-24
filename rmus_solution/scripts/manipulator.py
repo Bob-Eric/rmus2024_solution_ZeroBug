@@ -19,8 +19,7 @@ class AlignRequest(IntEnum):
     Reset = 0
     Grasp = 1
     Place = 2
-    OpenGripper = 3
-    CloseGripper = 4
+    PlaceFake = 3
 
 
 prefix = "[manipulator]"
@@ -135,19 +134,11 @@ class manipulator:
         elif req.mode == AlignRequest.Place:
             resp = self.place_cube_resp(rate, req.layer)
             return resp
-        elif req.mode == AlignRequest.OpenGripper:
-            self.arm_act.open_gripper()
+        elif req.mode == AlignRequest.PlaceFake:
+            self.arm_act.place_fake()
             resp = graspsignalResponse()
             resp.res = True
-            resp.response = "open gripper"
-            resp.error_code = ErrorCode.Success
-            rospy.loginfo(resp.response)
-            return resp
-        elif req.mode == AlignRequest.CloseGripper:
-            self.arm_act.close_gripper()
-            resp = graspsignalResponse()
-            resp.res = True
-            resp.response = "close gripper"
+            resp.response = "Place fake cube"
             resp.error_code = ErrorCode.Success
             rospy.loginfo(resp.response)
             return resp
