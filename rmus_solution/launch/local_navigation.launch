@@ -1,6 +1,6 @@
 <launch>
 
-    <arg name="rviz" default="false" />
+    <arg name="rviz" default="true" />
     <arg name="slam_method" default="carto" doc="method type [rtab, carto]" />
 
     <!-- Cartographer localization -->
