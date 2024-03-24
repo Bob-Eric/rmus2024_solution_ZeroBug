@@ -33,43 +33,30 @@ class gamecore:
         self.img_switch_mode = rospy.ServiceProxy(
             "/image_processor_switch_mode", switch
         )
+        """ gamecore state params: """
+        self.observing = True  ## if self.observing == True, classify the block to mining areas
+        """ gamecore record data (global): """
         self.gameinfo = None
+        self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
+        self.blockinfo_dict = {} ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
+        """ subscribe to gameinfo and blockinfo"""
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_game_info)
+        rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
+        """ observe gameinfo first """
+        self.navigation_result = self.navigation(PointName.Home, "")
+        self.align_res = self.aligner(AlignRequest.Reset, 0, 0, 0)
         rospy.sleep(2)
-
-        self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
         self.response = self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation_result = self.navigation(PointName.Noticeboard_1, "")
+        self.navigation_result = self.navigation(PointName.Noticeboard_2, "")
         rospy.sleep(2)
         self.navigation_result = self.navigation(PointName.Noticeboard_2, "")
         rospy.sleep(2)
 
-        # while not rospy.is_shutdown():
-        #     if self.gameinfo is not None:
-        #         break
-        #     else:
-        #         rospy.logwarn(prefix + "Waiting for gameinfo message.")
-        #     rospy.sleep(0.5)
-
-        self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
-        self.blockinfo_dict = {}
-        rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
-
-        """ gamecore state params: """
-        self.observing = (
-            True  ## if self.observing == True, classify the block to mining areas
-        )
-
         """ gamecore logic: """
         self.observation()
-        # self.grasp_and_place()
-        # self.align_res = self.aligner(AlignRequest.Reset, 0, 0)
-        self.observation()
-
-        self.observation(True)
-
-        self.observation(True)
-
+        # assert -1 not in self.block_mining_area.values()
+        self.grasp_and_place()
+        self.align_res = self.aligner(AlignRequest.Reset, 0, 0, 0)
         self.navigation_result = self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
@@ -103,7 +90,7 @@ class gamecore:
         if gameinfo.data is not None:
             self.gameinfo = gameinfo
 
-    def observation(self, reverse=False):
+    def observation(self):
         print("----------observing----------")
         targets = [
             PointName.MiningArea_0_Vp_1,
@@ -114,26 +101,20 @@ class gamecore:
             PointName.MiningArea_2_Vp_2,
         ]
 
-        if reverse:
-            targets = targets[::-1]
         for target in targets:
             self.navigation_result = self.navigation(target, "")
-            rospy.sleep(3)
+            rospy.sleep(2)
         self.observing = False
         print("----------done observing----------")
 
     def update_block_info(self, blockinfo_list: MarkerInfoList):
         for blockinfo in blockinfo_list.markerInfoList:
             self.blockinfo_dict[blockinfo.id] = blockinfo
-        # for blockinfo in blockinfo_list.markerInfoList:
-        #     if blockinfo.id != 4 and blockinfo.id != 6:
-        #         if blockinfo.in_cam:
-        #             rospy.logwarn(prefix + f"Block {blockinfo.id} is in the cam.")
         if self.observing:
-            self.classify_block(blockinfo_list)
+            self.assign_area(blockinfo_list)
         return
 
-    def classify_block(self, blockinfo_list: MarkerInfoList):
+    def assign_area(self, blockinfo_list: MarkerInfoList):
         blockinfo: MarkerInfo
         for blockinfo in blockinfo_list.markerInfoList:
             if 1 <= blockinfo.id <= 6:
@@ -158,7 +139,7 @@ class gamecore:
         return mining_area_id
         ...
 
-    def go_get_block(self, block_id: int):
+    def go_get_block(self, block_id: int, align_dir: int=0):
         area_idx = self.block_mining_area[block_id]
         if area_idx == -1:
             rospy.logwarn(prefix + f"block {block_id} is not in the mining area")
@@ -171,45 +152,45 @@ class gamecore:
         dest = navi_areas[area_idx]
         print(f"fetching block {block_id} from area No.{area_idx}")
         self.navigation_result = self.navigation(dest, "")
-        self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
+        print("go_get_block() no align dir")
+        self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0, align_dir)
+        ## TODO: test if align_dir is useful
+        self.align_res = self.aligner(AlignRequest.OpenGripper, block_id, 0, 0)
+        rospy.sleep(2)
+        self.navigation_result = self.navigation(dest, "")
+        print("go_get_block() align dir")
+        self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0, 1)
         return True
 
     def stack(self, block_id: int, slot: int, layer: int):
         """stack the block to the given slot and layer"""
         max_attempt = 5
-        hbias_allow = 0.018  # 1.8cm horizontal bias is allowed
+        hbias_allow = 0.012  ## 1.8cm horizontal bias is allowed
         for i in range(max_attempt):
-            print(
-                f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}."
-            )
-            # try place
-            self.align_res = self.aligner(AlignRequest.Place, slot, layer)
-            # go to the front to check
+            print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
+            ## try place
+            self.align_res = self.aligner(AlignRequest.Place, slot, layer, 0)
+            ## go to the front to check
             self.navigation_result = self.navigation(PointName.Station_Front, "")
-            # if not in sight from the front, it must falls to the back
+            ## if not in sight from the front, it must falls to the back
             if not self.blockinfo_dict[block_id].in_cam:
-                print(
-                    f"Block {block_id} is not in sight from the front. Now go to the back."
-                )
+                print(f"Block {block_id} is not in sight from the front. Now go to the back.")
                 self.navigation_result = self.navigation(PointName.Station_Back, "")
-            # if not in sight from the back... How could it possible?! just return false
+            # assert self.blockinfo_dict[block_id].in_cam
+            ## if not in sight from the back... How could it possible?! just return false
             if not self.blockinfo_dict[block_id].in_cam:
-                print(
-                    f"Block {block_id} is not in sight from the back. What the fuck?! I quit."
-                )
+                print(f"Block {block_id} is not in sight from the back. What the fuck?! I quit.")
                 return False
-            # check if block's stacked well by horizontal bias
+            ## calc horizontal bias to check if block's stacked well
             hbias = self.get_hbias(block_id, slot)
             if self.get_layer(block_id) == layer and hbias < hbias_allow:
-                print(
-                    f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}."
-                )
+                print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
                 return True
             else:
                 print(f"Result: hbias of {hbias}.")
-            # won't pick up the block at the last attempt
+            ## won't pick up the block at the last attempt
             if i < max_attempt - 1:
-                self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0)
+                self.align_res = self.aligner(AlignRequest.Grasp, block_id, 0, 0)
         print(f"Max attempt reached. stack failed.")
         return False
 
@@ -221,7 +202,7 @@ class gamecore:
         ):
             return -1
         block_info = self.blockinfo_dict[block_id]
-        # block in layer 1 is at height of height_base
+        ## block in layer 1 is at height of height_base
         block_size, height_base = 0.05, -0.045
         layer = round((block_info.gpose.position.z - height_base) / block_size) + 1
         return layer
