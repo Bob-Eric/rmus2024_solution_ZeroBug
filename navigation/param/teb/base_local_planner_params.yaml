@@ -16,7 +16,7 @@ TebLocalPlannerROS:
   max_vel_x: 0.5
   max_vel_x_backwards: 0.5
   max_vel_y: 0.5 # for omnidirection
-  max_vel_theta: 1.0
+  max_vel_theta: 0.5
   acc_lim_x: 3.0
   acc_lim_y: 3.0 # for omnidirection
   acc_lim_theta: 3.0
@@ -27,7 +27,7 @@ TebLocalPlannerROS:
 
   footprint_model:
     type: "polygon"
-    vertices: [[-0.16, -0.11], [-0.16, 0.11], [0.16, 0.11], [0.16, -0.11]] # 2D shape of the robot
+    vertices: [[-0.14, -0.12], [-0.14, 0.12], [0.14, 0.12], [0.14, -0.12]] # 2D shape of the robot
 
   # GoalTolerance
   xy_goal_tolerance: 0.1
@@ -42,7 +42,7 @@ TebLocalPlannerROS:
   inflaion_dist: 0.1 # not fine-tuned
 
   # Optimization
-  no_inner_iterations: 5 # may be enough
+  no_inner_iterations: 8 # may be enough
   no_outer_iterations: 4 # may be enough
   optimization_activate: True
   optimization_verbose: False
@@ -68,7 +68,7 @@ TebLocalPlannerROS:
   enable_homotopy_class_planning: True
   enable_multithreading: True
   simple_exploration: False
-  max_number_classes: 10
+  max_number_classes: 8
   selection_cost_hysteresis: 1.0
   selection_obst_cost_scale: 1.0
   selection_alternative_time_cost: False

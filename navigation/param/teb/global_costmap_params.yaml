@@ -6,9 +6,7 @@ global_costmap:
   transform_tolerance: 0.2
   rolling_window: false
 
-
-
   inflation_layer:
     enabled: true
     cost_scaling_factor: 15.0 # default
-    inflation_radius: 0.3 # default
+    inflation_radius: 0.25 # default

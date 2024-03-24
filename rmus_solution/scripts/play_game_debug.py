@@ -161,7 +161,7 @@ class gamecore:
         print(f"highest block id: {highest_block.id}, gpose height: {height}")
 
         ## blocks in first layer is 0.035m above the base
-        height_base = 0.035
+        height_base = 0.035 - 0.08
         block_size = 0.05
         layers = round((height - height_base) / block_size)
         ## stack on the left (by default, align with "B" instead of highest block to eliminate systematic error)
