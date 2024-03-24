@@ -36,8 +36,10 @@ class ErrorCode(IntEnum):
     Stuck = 4
     # Target is too far away, cannot grasp/place just by pid control
     TargetTooFaraway = 5
+    # Timeout
+    TImeout = 6
     # Gripper is failed to grasp the cube, maybe the esitmated position is wrong
-    Fail = 6
+    Fail = 7
 
 
 arm_base_frame = "arm_base"
@@ -59,6 +61,7 @@ class manipulator:
 
         ############### Dynamic params ###############
         self.ros_rate = 10
+        self.timeout = 10
         self.Kp = 0.5
         self.Ki = 0.0
         self.Kd = 0.0
@@ -121,6 +124,8 @@ class manipulator:
 
         rate = rospy.Rate(self.ros_rate)
 
+        self.align_act.set_align_angle(req.align_angle)
+
         if req.mode == AlignRequest.Grasp:
             resp = self.grasp_cube_resp(rate)
             return resp
@@ -172,7 +177,17 @@ class manipulator:
             desired_tag_ang_base_link,
         ]
         self.align_act.set_target_state(target_state)
+
+        max_time = rospy.get_time() + self.timeout
+
         while not rospy.is_shutdown():
+            if rospy.get_time() > max_time:
+                resp.res = False
+                resp.response = "Timeout"
+                resp.error_code = ErrorCode.TImeout
+                rospy.logwarn(resp.response)
+                break
+
             marker_pose_in_cam = self.current_marker_poses
 
             marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
@@ -275,7 +290,16 @@ class manipulator:
         ]
         self.align_act.set_target_state(target_state)
 
+        max_time = rospy.get_time() + self.timeout
+
         while not rospy.is_shutdown():
+            if rospy.get_time() > max_time:
+                resp.res = False
+                resp.response = "Timeout"
+                resp.error_code = ErrorCode.TImeout
+                rospy.logwarn(resp.response)
+                break
+
             marker_pose_in_cam = self.current_marker_poses
 
             marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
@@ -317,6 +341,7 @@ class manipulator:
         self.ros_rate = config["control_frequency"]
         self.desired_cube_pos_arm_base[0] = config["desired_cube_x"]
         self.desired_cube_pos_arm_base[1] = config["desired_cube_y"]
+        self.timeout = config["timeout"]
         self.Kp = config["Kp"]
         self.Ki = config["Ki"]
         self.Kd = config["Kd"]
