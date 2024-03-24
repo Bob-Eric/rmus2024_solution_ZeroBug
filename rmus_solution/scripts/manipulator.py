@@ -124,6 +124,8 @@ class manipulator:
 
         rate = rospy.Rate(self.ros_rate)
 
+        self.align_act.set_align_angle(req.align_angle)
+
         if req.mode == AlignRequest.Grasp:
             resp = self.grasp_cube_resp(rate)
             return resp
@@ -175,7 +177,9 @@ class manipulator:
             desired_tag_ang_base_link,
         ]
         self.align_act.set_target_state(target_state)
+
         max_time = rospy.get_time() + self.timeout
+
         while not rospy.is_shutdown():
             if rospy.get_time() > max_time:
                 resp.res = False
