@@ -90,10 +90,13 @@ class router:
             "/move_base/cancel", GoalID, queue_size=10
         )
 
+        self.mission = PointName.End
+        
+        rospy.sleep(2.0)
+        
         self.service = rospy.Service(
             "/set_navigation_goal", setgoal, self.setgoalCallback
         )
-        self.mission = PointName.End
 
     def MoveBaseResultCallback(self, msg: MoveBaseActionResult):
         if msg.status.status == 3:

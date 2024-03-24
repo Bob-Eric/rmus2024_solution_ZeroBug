@@ -58,7 +58,7 @@ class manipulator:
         self.image_time_now = 0
         self.desired_marker_id = 0
 
-        self.state_tolerance = [0.008, 0.008, 0.05]
+        self.state_tolerance = [0.01, 0.01, 0.1]
 
         ############### Dynamic params ###############
         self.ros_rate = 10
