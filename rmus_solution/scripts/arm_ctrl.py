@@ -134,6 +134,17 @@ class arm_action:
         rospy.loginfo(prefix + "reset the arm")
         self.__position_pub.publish(reset_arm_msg)
 
+    def place_fake(self):
+        rospy.loginfo(prefix + "<manipulater>: place fake cube")
+        pose = Pose()
+        pose.position.x = 0.21
+        pose.position.y = -0.08
+        self.__position_pub.publish(pose)
+        rospy.sleep(2.0)
+        self.open_gripper()
+        rospy.sleep(2.0)
+        self.reset_pos()
+
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo(prefix + "<manipulater>: now prepare to place (first layer)")
         pose = Pose()
