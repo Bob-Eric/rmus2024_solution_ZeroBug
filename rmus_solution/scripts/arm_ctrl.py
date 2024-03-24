@@ -134,6 +134,17 @@ class arm_action:
         rospy.loginfo(prefix + "reset the arm")
         self.__position_pub.publish(reset_arm_msg)
 
+    def place_fake(self):
+        rospy.loginfo(prefix + "<manipulater>: place fake cube")
+        pose = Pose()
+        pose.position.x = 0.21
+        pose.position.y = -0.08
+        self.__position_pub.publish(pose)
+        rospy.sleep(2.0)
+        self.open_gripper()
+        rospy.sleep(2.0)
+        self.reset_pos()
+
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo(prefix + "<manipulater>: now prepare to place (first layer)")
         pose = Pose()
@@ -223,6 +234,7 @@ class align_action:
         self.__decay_near = 9
         self.__decay_seperate_dist = 0.1
         self.__is_near_target_state_old = False
+        self.__align_angle = True
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -277,6 +289,9 @@ class align_action:
 
         return [vel_x, vel_y, 0.0]
 
+    def set_align_angle(self, align_angle: bool):
+        self.__align_angle = align_angle
+
     # x y theta
     def set_target_state(self, target_state: list):
         self.__target_state = target_state
@@ -296,7 +311,7 @@ class align_action:
         else:
             decay = self.__decay_near
 
-        vel_ang = decay * error[2]
+        vel_ang = decay * error[2] if self.__align_angle else 0.0
         vel_x = decay * error[0] + y * vel_ang
         vel_y = decay * error[1] - x * vel_ang
         return [vel_x, vel_y, vel_ang]
