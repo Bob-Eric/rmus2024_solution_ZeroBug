@@ -269,7 +269,7 @@ class gamecore:
             if not done:
                 ## TODO: failure logic
                 continue
-            self.navigation_result = self.navigation(PointName.Station_2, "")
+            self.navigation_result = self.navigation(slots_order[i], "")
             self.stack(target, slots_order[i], layers_order[i])
             print(f"----------done stacking No.{i} block(id={target})----------")
         print("----------done stacking three blocks----------")
