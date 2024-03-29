@@ -1,6 +1,0 @@
-<launch>
-    <include file="$(find rmus_solution)/launch/local_navigation.launch" />
-    <include file="$(find ep_teleop)/launch/keyboard.launch" />
-
-    <include file="$(find rmus_solution)/launch/static_tf_publish.launch" />
-</launch>

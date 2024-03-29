@@ -1,8 +1,0 @@
-<launch>
-    <node pkg="rmus_solution" type="manipulator.py" name="shadow_aligner" output="screen" />
-    <node pkg="rmus_solution" type="img_processor.py" name="img_process_node" output="screen" />
-    <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen" />
-
-    <node pkg="dynamic_reconfigure" type="dynparam" name="dynparam"
-        args="load shadow_aligner $(find rmus_solution)/params/manipulater.yaml" output="screen" />
-</launch>

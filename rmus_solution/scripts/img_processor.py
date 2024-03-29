@@ -4,7 +4,7 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseArray
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
@@ -99,6 +99,7 @@ class Processor:
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
+        self.pub_gpose = rospy.Publisher("/get_gpose", PoseArray, queue_size=10)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
@@ -122,6 +123,12 @@ class Processor:
         ## update blocks_info (and publish)
         self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
+
+        ## publish gpose for visualization in rviz
+        pose_msg = PoseArray()
+        pose_msg.header.frame_id = "map"
+        pose_msg.poses = [blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None]
+        self.pub_gpose.publish(pose_msg)
         return
 
     def depthCallback(self, image):
@@ -218,6 +225,9 @@ class Processor:
                     if np.linalg.norm(p1 - p2) > 0.2:
                         rospy.logwarn( f"Block {id} has moved a lot ({dist:.2f}) from {p1} to {p2}. Maybe misdetection.")
 
+                ## low pass filter
+                a = 0.9
+                block_info[0] = block_info[0] * (1-a) + a * self.blocks_info[i][0]
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)

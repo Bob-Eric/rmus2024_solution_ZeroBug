@@ -55,3 +55,6 @@ CATKIN_IGNORE
 __pycache__/
 *.bk
 *.avi
+*_debug.launch
+*_chy.launch
+*_ym.launch
