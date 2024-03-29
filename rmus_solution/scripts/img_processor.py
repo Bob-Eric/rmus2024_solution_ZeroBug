@@ -19,8 +19,8 @@ from detect import marker_detection
 
 
 class ModeRequese(IntEnum):
-    DoNothing = 0
-    BlockInfo = 1
+    DoNothing = 0       ## disable marker_detection to save resources (160% cpu -> 60% cpu)
+    BlockInfo = 1       ## actually not in use, blockinfo and gameinfo are detected simultaneously
     GameInfo = 2
 
     End = 3
@@ -110,16 +110,17 @@ class Processor:
         )
         locked_current_mode = self.current_mode
 
-        id_list, _, _, tvec_list, rvec_list = marker_detection(
-            self.image,
-            self.camera_matrix,
-            self.verbose,
-        )
+        id_list, tvec_list, rvec_list = [], [], []
         if locked_current_mode != ModeRequese.DoNothing:
-            ## update gameinfo (and publish)
-            self.update_gameinfo(id_list, tvec_list)
-            ## update blocks_info (and publish)
-            self.update_blocks_info(id_list, tvec_list, rvec_list)
+            id_list, _, _, tvec_list, rvec_list = marker_detection(
+                self.image,
+                self.camera_matrix,
+                self.verbose
+            )
+        ## update gameinfo (and publish)
+        self.update_gameinfo(id_list, tvec_list)
+        ## update blocks_info (and publish)
+        self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
         return
 
@@ -202,25 +203,20 @@ class Processor:
                 ## TODO: test if there are blocks whose gpose differs a lot from last gpose
                 if self.blocks_info[i] is not None:  # and id == 7:
                     last_gpose = self.blocks_info[i][1]
-                    p1 = np.array(
-                        (
-                            last_gpose.position.x,
-                            last_gpose.position.y,
-                            last_gpose.position.z,
-                        )
-                    )
-                    p2 = np.array(
-                        (
-                            gpose_list[idx].position.x,
-                            gpose_list[idx].position.y,
-                            gpose_list[idx].position.z,
-                        )
-                    )
+                    p1 = np.array((
+                        last_gpose.position.x,
+                        last_gpose.position.y,
+                        last_gpose.position.z
+                    ))
+                    p2 = np.array((
+                        gpose_list[idx].position.x,
+                        gpose_list[idx].position.y,
+                        gpose_list[idx].position.z
+                    ))
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
+                    dist = np.linalg.norm(p1-p2)
                     if np.linalg.norm(p1 - p2) > 0.2:
-                        rospy.logwarn(
-                            f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection."
-                        )
+                        rospy.logwarn( f"Block {id} has moved a lot ({dist:.2f}) from {p1} to {p2}. Maybe misdetection.")
 
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
