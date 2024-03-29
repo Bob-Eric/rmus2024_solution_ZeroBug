@@ -8,7 +8,7 @@ from navi_control import PointName, router
 from img_processor import ModeRequese
 from manipulator import AlignRequest
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseArray
 import math
 
 
@@ -40,16 +40,16 @@ class gamecore:
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
         self.blockinfo_dict = {} ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
         """ subscribe to gameinfo and blockinfo"""
-        rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_game_info)
-        rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_block_info)
+        rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
+        rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
         """ observe gameinfo first """
         self.navigation(PointName.Home, "")
         self.aligner(AlignRequest.Reset, 0, 0, 0)
         rospy.sleep(2)
         self.navigation(PointName.Noticeboard_2, "")
-        self.standby(2)
+        rospy.sleep(2)
         self.navigation(PointName.Noticeboard_2, "")
-        self.standby(2)
+        rospy.sleep(2)
 
         """ gamecore logic: """
         self.observation()
@@ -58,13 +58,6 @@ class gamecore:
         self.aligner(AlignRequest.Reset, 0, 0, 0)
         self.navigation(PointName.Park, "")
 
-    def standby(self, seconds:float):
-        """ stand by for seconds and observe gameinfo and blockinfo """
-        ## actually blockinfo and gameinfo are updated simultaneously
-        self.img_switch_mode(ModeRequese.GameInfo)
-        rospy.sleep(seconds)
-        self.img_switch_mode(ModeRequese.DoNothing)
-        return
 
     def wait_for_services(self):
         while not rospy.is_shutdown():
@@ -93,7 +86,7 @@ class gamecore:
                 )
                 rospy.sleep(0.5)
 
-    def update_game_info(self, gameinfo: UInt8MultiArray):
+    def update_gameinfo(self, gameinfo: UInt8MultiArray):
         if gameinfo.data is not None:
             self.gameinfo = gameinfo
 
@@ -110,11 +103,11 @@ class gamecore:
 
         for target in targets:
             self.navigation(target, "")
-            self.standby(2)
+            rospy.sleep(2)
         self.observing = False
         print("----------done observing----------")
 
-    def update_block_info(self, blockinfo_list: MarkerInfoList):
+    def update_blockinfo(self, blockinfo_list: MarkerInfoList):
         for blockinfo in blockinfo_list.markerInfoList:
             self.blockinfo_dict[blockinfo.id] = blockinfo
         if self.observing:
