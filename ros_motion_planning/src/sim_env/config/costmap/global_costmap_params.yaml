@@ -23,8 +23,8 @@ global_costmap:
         max_obstacle_height: 2.0,
         min_obstacle_height: 0.0,
         obstacle_range: 2.5,
-        raytrace_range: 3.0,
-        inf_is_valid: true,
+        raytrace_range: 5.0,
+        inf_is_valid: false,
       }
 
   inflation_layer:
