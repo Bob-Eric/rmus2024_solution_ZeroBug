@@ -4,7 +4,7 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseArray
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
@@ -19,8 +19,8 @@ from detect import marker_detection
 
 
 class ModeRequese(IntEnum):
-    DoNothing = 0
-    BlockInfo = 1
+    DoNothing = 0       ## disable marker_detection to save resources (160% cpu -> 60% cpu)
+    BlockInfo = 1       ## actually not in use, blockinfo and gameinfo are detected simultaneously
     GameInfo = 2
 
     End = 3
@@ -99,6 +99,7 @@ class Processor:
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
+        self.pub_gpose = rospy.Publisher("/get_gpose", PoseArray, queue_size=10)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
 
@@ -110,17 +111,24 @@ class Processor:
         )
         locked_current_mode = self.current_mode
 
-        id_list, _, _, tvec_list, rvec_list = marker_detection(
-            self.image,
-            self.camera_matrix,
-            self.verbose,
-        )
+        id_list, tvec_list, rvec_list = [], [], []
         if locked_current_mode != ModeRequese.DoNothing:
-            ## update gameinfo (and publish)
-            self.update_gameinfo(id_list, tvec_list)
-            ## update blocks_info (and publish)
-            self.update_blocks_info(id_list, tvec_list, rvec_list)
+            id_list, _, _, tvec_list, rvec_list = marker_detection(
+                self.image,
+                self.camera_matrix,
+                self.verbose
+            )
+        ## update gameinfo (and publish)
+        self.update_gameinfo(id_list, tvec_list)
+        ## update blocks_info (and publish)
+        self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
+
+        ## publish gpose for visualization in rviz
+        pose_msg = PoseArray()
+        pose_msg.header.frame_id = "map"
+        pose_msg.poses = [blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None]
+        self.pub_gpose.publish(pose_msg)
         return
 
     def depthCallback(self, image):
@@ -202,26 +210,24 @@ class Processor:
                 ## TODO: test if there are blocks whose gpose differs a lot from last gpose
                 if self.blocks_info[i] is not None:  # and id == 7:
                     last_gpose = self.blocks_info[i][1]
-                    p1 = np.array(
-                        (
-                            last_gpose.position.x,
-                            last_gpose.position.y,
-                            last_gpose.position.z,
-                        )
-                    )
-                    p2 = np.array(
-                        (
-                            gpose_list[idx].position.x,
-                            gpose_list[idx].position.y,
-                            gpose_list[idx].position.z,
-                        )
-                    )
+                    p1 = np.array((
+                        last_gpose.position.x,
+                        last_gpose.position.y,
+                        last_gpose.position.z
+                    ))
+                    p2 = np.array((
+                        gpose_list[idx].position.x,
+                        gpose_list[idx].position.y,
+                        gpose_list[idx].position.z
+                    ))
                     # print(f"dist: {np.linalg.norm(p1-p2):.2f}")
+                    dist = np.linalg.norm(p1-p2)
                     if np.linalg.norm(p1 - p2) > 0.2:
-                        rospy.logwarn(
-                            f"Block {id} has moved a lot ({np.linalg.norm(p1-p2):.2f}). Maybe misdetection."
-                        )
+                        rospy.logwarn( f"Block {id} has moved a lot ({dist:.2f}) from {p1} to {p2}. Maybe misdetection.")
 
+                ## low pass filter
+                a = 0.9
+                block_info[0] = block_info[0] * (1-a) + a * self.blocks_info[i][0]
                 self.blocks_info[i] = block_info
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
