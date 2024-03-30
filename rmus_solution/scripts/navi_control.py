@@ -57,7 +57,7 @@ class router:
         PointName.Noticeboard_2: (0, 1.65, 0),
         PointName.Park: (3.16, -0.795, 0.00),
         PointName.Station_Front: (1.05, 1.55, pi / 12),
-        PointName.Station_Back: (2.58, 1.80, pi),
+        PointName.Station_Back: (2.48, 1.80, pi),
     }
 
     def __init__(self) -> None:
