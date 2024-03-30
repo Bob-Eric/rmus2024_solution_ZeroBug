@@ -3,7 +3,7 @@ RPPPlanner:
   convert_offset: 0.0
 
   # goal reached tolerance
-  goal_dist_tolerance: 0.05
+  goal_dist_tolerance: 0.08
   rotate_tolerance: 0.06
 
   # linear velocity
