@@ -31,6 +31,8 @@ straf_recovery:
   go_to_goal_distance_threshold: 0.0
   maximum_translate_distance: 1.5
   minimum_translate_distance: 0.1
+  increase_distance_threshold: 0.025
   straf_vel: 0.15
   timeout: 10.0
+  obstacle_find_interval: 0.5
   xy_goal_tolerance: 0.1
