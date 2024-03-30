@@ -46,6 +46,7 @@ class gamecore:
         self.navigation(PointName.Home, "")
         self.aligner(AlignRequest.Reset, 0, 0, 0)
         rospy.sleep(2)
+        self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation(PointName.Noticeboard_2, "")
         rospy.sleep(2)
         self.navigation(PointName.Noticeboard_2, "")
