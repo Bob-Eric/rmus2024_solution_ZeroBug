@@ -29,9 +29,6 @@ class AlignRequest(IntEnum):
     PlaceFake = 3
 
 
-prefix = "[manipulator]"
-
-
 class ErrorCode(IntEnum):
     Success = 0
     # Marker info is too old, latency detected
@@ -65,7 +62,7 @@ class manipulator:
         self.image_time_now = 0
         self.desired_marker_id = 0
 
-        self.state_tolerance = [0.01, 0.01, 0.1]
+        self.state_tolerance = [0.02, 0.02, 0.1]
 
         ############### Dynamic params ###############
         self.ros_rate = 10
@@ -125,7 +122,7 @@ class manipulator:
         # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.image_time_now > 0.1:
-            rospy.loginfo(prefix + "latency detected!")
+            rospy.loginfo("latency detected!")
 
             # Go back for 0.5s
             if rospy.get_time() - initial_time > 1.0:
@@ -159,7 +156,7 @@ class manipulator:
             rospy.loginfo(resp.response)
             return resp
         else:
-            rospy.logerr(prefix + "Invalid mode")
+            rospy.logerr("Invalid mode")
             resp = graspsignalResponse()
             resp.res = False
             resp.error_code = ErrorCode.Fail
@@ -242,7 +239,7 @@ class manipulator:
             ]
             self.align_act.set_measured_state(measured_state)
             err = np.array(measured_state)-np.array(target_state)
-            rospy.loginfo(f"error: {1000*err[0]:.3f}mm, {1000*err[1]:.3f}mm, {np.rad2deg(err[2]):.3f}rad")
+            rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
 
             if self.arm_act.can_arm_grasp_sometime(
                 marker_in_arm_base, 1.0, self.align_mode
@@ -300,7 +297,7 @@ class manipulator:
         if 1 <= place_layer <= 3:
             self.arm_act.preparation_for_place(place_layer)
         else:
-            rospy.logwarn(prefix + f"Invalid layer: {place_layer}")
+            rospy.logwarn(f"Invalid layer: {place_layer}")
             resp.res = False
             resp.response = "Invalid layer"
             resp.error_code = ErrorCode.InvalidLayer
@@ -354,7 +351,7 @@ class manipulator:
             ]
 
             err = np.array(measured_state)-np.array(target_state)
-            rospy.loginfo(f"error: {1000*err[0]:.3f}mm, {1000*err[1]:.3f}mm, {np.rad2deg(err[2]):.3f}degree")
+            rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
             self.align_act.set_measured_state(measured_state)
             if self.align_act.is_near_target_state_sometime(self.state_tolerance, 1.0):
                 self.arm_act.go_and_place()
@@ -414,8 +411,7 @@ class manipulator:
             rospy.Time.now(),
         ):
             rospy.logerr(
-                prefix
-                + f"pick_and_place: cannot find transform between {target_frame} and {source_frame}"
+                f"pick_and_place: cannot find transform between {target_frame} and {source_frame}"
             )
             return None, None
         posestamped_source = tf2_geometry_msgs.PoseStamped()
