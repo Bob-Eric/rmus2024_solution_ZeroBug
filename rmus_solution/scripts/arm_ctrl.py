@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from math import fabs
 import rospy
 import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
@@ -28,7 +29,10 @@ class arm_action:
         self.movement_active_time = 0.0
         self.__vel_old = [0.0, 0.0, 0.0]
         self.__can_arm_grasp_old = False
-        # self.__can_arm_grasp_start_time = 0.0
+        self.max_vel = 0.3
+        self.max_angular_vel = 0.3
+        self.min_vel = 0.0
+        self.min_angular_vel = 0.0
 
     def __cmd_vel_callback(self, msg: Twist):
         vel = [msg.linear.x, msg.linear.y, msg.angular.z]
@@ -93,6 +97,12 @@ class arm_action:
         return np.linalg.norm(self.__vel[0:2]) >= 0.2
 
     def send_cmd_vel(self, vel: list):
+        vel[0] = max(self.min_vel, min(self.max_vel, fabs(vel[0]))) * np.sign(vel[0])
+        vel[1] = max(self.min_vel, min(self.max_vel, fabs(vel[1]))) * np.sign(vel[1])
+        vel[2] = max(
+            self.min_angular_vel, min(self.max_angular_vel, fabs(vel[2]))
+        ) * np.sign(vel[2])
+
         twist = Twist()
         twist.linear.z = 0.0
         twist.linear.x = vel[0]
@@ -102,6 +112,18 @@ class arm_action:
         twist.angular.y = 0.0
         self.__cmd_vel_pub.publish(twist)
         rospy.loginfo(prefix + f"send cmd_vel: {vel}")
+
+    def apply_velocity_limit(
+        self,
+        max_vel: float,
+        max_angular_vel: float,
+        min_vel=0.0,
+        min_angular_vel=0.0,
+    ):
+        self.max_vel = max_vel
+        self.max_angular_vel = max_angular_vel
+        self.min_vel = min_vel
+        self.min_angular_vel = min_angular_vel
 
     def get_last_vel(self):
         return self.__vel
