@@ -58,34 +58,26 @@ class gamecore:
         # assert -1 not in self.block_mining_area.values()
         # self.grasp_and_place()
         ######### for test #########
-        self.go_get_block(1)
-        self.aligner(AlignRequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(1)
+        def test_grasp_block(block_id):
+            print(f"go get block {block_id}")
+            self.go_get_block(1)
+            self.aligner(AlignRequest.PlaceFake, 0, 0, 0)
+            print(f"go get block {block_id}")
+            self.go_get_block(1)
+            print(f"stack {block_id}")
+            self.navigation(PointName.Station_Front, "")
+
+        test_grasp_block(1)
         self.stack(1, 7, 1)
-
-        self.go_get_block(2)
-        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(2)
+        test_grasp_block(2)
         self.stack(2, 8, 1)
-
-        self.go_get_block(3)
-        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(3)
+        test_grasp_block(3)
         self.stack(3, 9, 1)
-
-        self.go_get_block(4)
-        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(4)
+        test_grasp_block(4)
         self.stack(4, 7, 2)
-
-        self.go_get_block(5)
-        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(5)
+        test_grasp_block(5)
         self.stack(5, 8, 2)
-
-        self.go_get_block(6)
-        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
-        self.go_get_block(6)
+        test_grasp_block(6)
         self.stack(6, 9, 2)
         ############################
         self.aligner(AlignRequest.Reset, 0, 0, 0)
@@ -197,6 +189,7 @@ class gamecore:
         """stack the block to the given slot and layer"""
         max_attempt = 1
         hbias_allow = 0.012  ## 1.8cm horizontal bias is allowed
+        self.navigation(slot, "")
         for i in range(max_attempt):
             print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
             ## try place
@@ -225,8 +218,8 @@ class gamecore:
             #     print(f"Result: hbias of {hbias}.")
             # ## won't pick up the block at the last attempt
             # if i < max_attempt - 1:
+            #     self.navigation(slot, "")
             #     self.aligner(AlignRequest.Grasp, block_id, 0, 0)
-            #     self.navigation(PointName.Station_Front, "")
             ###########################
         print(f"Max attempt reached. stack failed.")
         return False
