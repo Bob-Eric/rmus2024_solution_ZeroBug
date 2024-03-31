@@ -5,14 +5,21 @@ import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
 from geometry_msgs.msg import Pose
-from rmus_solution.srv import graspsignal, graspsignalRequest, graspsignalResponse
+from rmus_solution.srv import (
+    graspsignal,
+    graspsignalRequest,
+    graspsignalResponse,
+    graspconfig,
+    graspconfigRequest,
+    graspconfigResponse,
+)
 from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulater_PIDConfig
 from enum import IntEnum
-from arm_ctrl import arm_action, align_action
+from arm_ctrl import arm_action, align_action, AlignMode
 
 
 class AlignRequest(IntEnum):
@@ -68,6 +75,10 @@ class manipulator:
         self.Kd = 0.0
         self.desired_cube_pos_arm_base = [0.5, 0.0]
         self.desired_tag_pos_arm_base = [0.5, 0.0]
+        self.max_velocity = 0.5
+        self.min_velocity = 0.1
+        self.max_angular_velocity = 0.5
+        self.min_angular_velocity = 0.1
         ############### Dynamic params ###############
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -76,8 +87,11 @@ class manipulator:
         self.__marker_pose_sub = rospy.Subscriber(
             "/get_blockinfo", MarkerInfoList, self.marker_pose_callback, queue_size=1
         )
-        self.__service = rospy.Service(
+        self.__grasp_signal_service = rospy.Service(
             "/let_manipulater_work", graspsignal, self.grasp_signal_callback
+        )
+        self.__grasp_config_service = rospy.Service(
+            "/manipulater_config", graspconfig, self.grasp_config_callback
         )
         self.__dynamic_reconfigure_server = Server(
             manipulater_PIDConfig, self.dynamic_reconfigure_callback
@@ -125,8 +139,6 @@ class manipulator:
 
         rate = rospy.Rate(self.ros_rate)
 
-        self.align_act.set_align_angle(req.align_angle)
-
         if req.mode == AlignRequest.Grasp:
             resp = self.grasp_cube_resp(rate)
             return resp
@@ -151,7 +163,14 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
+    def grasp_config_callback(self, req: graspconfigRequest):
+        resp = graspconfigResponse()
+        self.align_act.set_align_config(req.align_angle, AlignMode(req.align_mode))
+        resp.res = True
+        return resp
+
     def grasp_cube_resp(self, rate):
+
         resp = graspsignalResponse()
 
         if not 1 <= self.desired_marker_id <= 6:
@@ -356,8 +375,18 @@ class manipulator:
         self.Kd = config["Kd"]
         self.desired_tag_pos_arm_base[0] = config["desired_tag_x"]
         self.desired_tag_pos_arm_base[1] = config["desired_tag_y"]
+        self.max_velocity = config["max_velocity"]
+        self.min_velocity = config["min_velocity"]
+        self.max_angular_velocity = config["max_angular_velocity"]
+        self.min_angular_velocity = config["min_angular_velocity"]
         self.seperate_I_threshold = config["seperate_I_threshold"]
 
+        self.arm_act.apply_velocity_limit(
+            self.max_velocity,
+            self.max_angular_velocity,
+            self.min_velocity,
+            self.min_angular_velocity,
+        )
         self.align_act.set_pid_param(
             self.Kp, self.Ki, self.Kd, self.seperate_I_threshold
         )

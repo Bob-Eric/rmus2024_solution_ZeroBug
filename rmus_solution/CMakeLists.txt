@@ -22,6 +22,7 @@ add_service_files(
   setgoal.srv
   switch.srv
   graspsignal.srv
+  graspconfig.srv
 )
 
 generate_messages(

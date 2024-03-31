@@ -1,7 +1,6 @@
 uint8 mode
 uint8 marker_id
 uint8 layer
-bool align_angle
 ---
 bool res
 string response
