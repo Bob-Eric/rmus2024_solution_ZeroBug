@@ -3,7 +3,7 @@
 
 import rospy
 from std_msgs.msg import UInt8MultiArray
-from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse
+from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse, graspconfig, graspconfigResponse
 from navi_control import PointName, router
 from img_processor import ModeRequese
 from manipulator import AlignRequest
@@ -12,52 +12,67 @@ from geometry_msgs.msg import Point, PoseArray
 import math
 
 
-prefix = "[gamecore]"
-sysprint = print
-
-
-def print(*args, **kwargs):
-    sysprint(prefix, end="")
-    sysprint(*args, **kwargs)
-
-
 class gamecore:
     mining_area_coord = [(0, 1.0), (0.65, 3.3), (2.4, -0.15)]
 
     def __init__(self):
         self.wait_for_services()
 
-        rospy.loginfo(prefix + "Get all rospy sevice!")
+        rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
         self.aligner = rospy.ServiceProxy("/let_manipulater_work", graspsignal)
-        self.img_switch_mode = rospy.ServiceProxy(
-            "/image_processor_switch_mode", switch
-        )
+        self.img_switch_mode = rospy.ServiceProxy( "/image_processor_switch_mode", switch)
+        self.ctl_switch_mode = rospy.ServiceProxy("/manipulater_config", graspconfig)
         """ gamecore state params: """
         self.observing = True  ## if self.observing == True, classify the block to mining areas
         """ gamecore record data (global): """
         self.gameinfo = None
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
         self.blockinfo_dict = {} ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
-        """ subscribe to gameinfo and blockinfo"""
+        ## subscribe to gameinfo and blockinfo
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
-        """ observe gameinfo first """
+        ## switch to PID control (no angle alignment)
+        self.ctl_switch_mode(2, 0)
+        """ start gamecore logic """
         self.navigation(PointName.Home, "")
-        self.aligner(AlignRequest.Reset, 0, 0, 0)
-        rospy.sleep(2)
-        self.navigation(PointName.Noticeboard_2, "")
-        rospy.sleep(2)
-        self.navigation(PointName.Noticeboard_2, "")
+        self.aligner(AlignRequest.Reset, 0, 0)
         rospy.sleep(2)
 
         """ gamecore logic: """
+        self.img_switch_mode(ModeRequese.BlockInfo)
         self.observation()
-        # assert -1 not in self.block_mining_area.values()
-        self.grasp_and_place()
-        self.aligner(AlignRequest.Reset, 0, 0, 0)
-        self.navigation(PointName.Park, "")
+        ######### for test #########
+        def test_grasp_block(block_id, slot, layer):
+            print(f"go get block {block_id} open loop")
+            self.ctl_switch_mode(0, 0)
+            self.go_get_block(block_id)
+            self.aligner(AlignRequest.PlaceFake, 0, 0)
+            rospy.sleep(2)
 
+            print(f"go get block {block_id} state space")
+            self.ctl_switch_mode(1, 0)
+            self.go_get_block(block_id)
+            self.aligner(AlignRequest.PlaceFake, 0, 0)
+            rospy.sleep(2)
+
+            print(f"go get block {block_id} PID")
+            self.ctl_switch_mode(2, 0)
+            self.go_get_block(block_id)
+            rospy.sleep(2)
+
+            print(f"stack {block_id}")
+            self.stack(block_id, slot, layer)
+
+        test_grasp_block(1, 7, 1)
+        test_grasp_block(2, 8, 1)
+        test_grasp_block(3, 9, 1)
+        test_grasp_block(4, 7, 2)
+        test_grasp_block(5, 8, 2)
+        test_grasp_block(6, 9, 2)
+        ###########################
+        self.aligner(AlignRequest.Reset, 0, 0)
+        self.navigation(PointName.Park, "")
 
     def wait_for_services(self):
         while not rospy.is_shutdown():
@@ -65,7 +80,7 @@ class gamecore:
                 rospy.wait_for_service("/set_navigation_goal", 1.0)
                 break
             except:
-                rospy.logwarn(prefix + "Waiting for set_navigation_goal Service")
+                rospy.logwarn("Waiting for set_navigation_goal Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():
@@ -73,7 +88,7 @@ class gamecore:
                 rospy.wait_for_service("/let_manipulater_work", 1.0)
                 break
             except:
-                rospy.logwarn(prefix + "Waiting for let_manipulater_work Service")
+                rospy.logwarn("Waiting for let_manipulater_work Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():
@@ -82,7 +97,7 @@ class gamecore:
                 break
             except:
                 rospy.logwarn(
-                    prefix + "Waiting for image_processor_switch_mode Service"
+                    "Waiting for image_processor_switch_mode Service"
                 )
                 rospy.sleep(0.5)
 
@@ -92,18 +107,16 @@ class gamecore:
 
     def observation(self):
         print("----------observing----------")
-        targets = [
-            PointName.MiningArea_0_Vp_1,
-            PointName.MiningArea_0_Vp_2,
-            PointName.MiningArea_1_Vp_1,
-            PointName.MiningArea_1_Vp_2,
-            PointName.MiningArea_2_Vp_1,
-            PointName.MiningArea_2_Vp_2,
-        ]
-
-        for target in targets:
-            self.navigation(target, "")
-            rospy.sleep(2)
+        self.img_switch_mode(ModeRequese.BlockInfo)
+        self.navigation(PointName.MiningArea_0_Vp_1, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_0_Vp_2, ""); rospy.sleep(2)
+        self.img_switch_mode(ModeRequese.GameInfo)
+        self.navigation(PointName.Noticeboard_2, ""); rospy.sleep(2)
+        self.img_switch_mode(ModeRequese.BlockInfo)
+        self.navigation(PointName.MiningArea_1_Vp_1, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_1_Vp_2, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_2_Vp_1, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_2_Vp_2, ""); rospy.sleep(2)
         self.observing = False
         print("----------done observing----------")
 
@@ -138,7 +151,7 @@ class gamecore:
     def go_get_block(self, block_id: int):
         area_idx = self.block_mining_area[block_id]
         if area_idx == -1:
-            rospy.logwarn(prefix + f"block {block_id} is not in the mining area")
+            rospy.logwarn(f"block {block_id} is not in the mining area")
             return False
         navi_areas = [
             PointName.MiningArea_0_Vp_2,
@@ -151,49 +164,22 @@ class gamecore:
         dest = navi_areas[2*area_idx]
         print(f"fetching block {block_id} from area No.{area_idx}")
         self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation(dest, "")
-        rospy.sleep(0.5)
         if not self.blockinfo_dict[block_id].in_cam:
+            print(f"block {block_id} not found in sight, go to spot1...")
+            self.navigation(dest, "")
+            rospy.sleep(0.5)
+        if not self.blockinfo_dict[block_id].in_cam:
+            print(f"block {block_id} not found in spot1, go to spot2...")
             dest = navi_areas[2*area_idx + 1]
             self.navigation(dest, "") 
             rospy.sleep(0.5)
-        self.aligner(AlignRequest.Grasp, block_id, 0, 0)
+        self.aligner(AlignRequest.Grasp, block_id, 0)
         return True
 
     def stack(self, block_id: int, slot: int, layer: int):
         """stack the block to the given slot and layer"""
-        max_attempt = 1
-        hbias_allow = 0.012  ## 1.8cm horizontal bias is allowed
-        for i in range(max_attempt):
-            print(f"Attempt {i}: stack block {block_id} to layer {layer} of slot {slot}.")
-            ## try place
-            self.aligner(AlignRequest.Place, slot, layer, 0)
-            ## go to the front to check
-            self.navigation(PointName.Station_Front, "")
-            rospy.sleep(0.5)
-            ## if not in sight from the front, it must falls to the back
-            if not self.blockinfo_dict[block_id].in_cam:
-                print(f"Block {block_id} is not in sight from the front. Now go to the back.")
-                self.navigation(PointName.Station_Back, "")
-                rospy.sleep(0.5)
-            # assert self.blockinfo_dict[block_id].in_cam
-            ## if not in sight from the back... How could it possible?! just return false
-            if not self.blockinfo_dict[block_id].in_cam:
-                print(f"Block {block_id} is not in sight from the back. What the fuck?! I quit.")
-                return False
-            ## calc horizontal bias to check if block's stacked well
-            hbias = self.get_hbias(block_id, slot)
-            if self.get_layer(block_id) == layer and hbias < hbias_allow:
-                print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
-                return True
-            else:
-                print(f"Result: hbias of {hbias}.")
-            ## won't pick up the block at the last attempt
-            if i < max_attempt - 1:
-                self.aligner(AlignRequest.Grasp, block_id, 0, 0)
-                self.navigation(PointName.Station_Front, "")
-
-        print(f"Max attempt reached. stack failed.")
+        self.navigation(slot, "")
+        self.aligner(AlignRequest.Place, slot, layer)
         return False
 
     def get_layer(self, block_id: int):
