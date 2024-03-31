@@ -19,8 +19,10 @@ from detect import marker_detection
 
 
 class ModeRequese(IntEnum):
-    DoNothing = 0       ## disable marker_detection to save resources (160% cpu -> 60% cpu)
-    BlockInfo = 1       ## actually not in use, blockinfo and gameinfo are detected simultaneously
+    DoNothing = 0  ## disable marker_detection to save resources (160% cpu -> 60% cpu)
+    BlockInfo = (
+        1  ## actually not in use, blockinfo and gameinfo are detected simultaneously
+    )
     GameInfo = 2
 
     End = 3
@@ -39,7 +41,6 @@ def pose_aruco_2_ros(rvec, tvec):
     aruco_pose_msg.orientation.z = r_quat[2]
     aruco_pose_msg.orientation.w = r_quat[3]
     return aruco_pose_msg
-
 
 
 class Processor:
@@ -70,9 +71,7 @@ class Processor:
                 )
                 rospy.loginfo("Get topic /camera/color/camera_info.")
                 self.camera_matrix = np.array(camerainfo.K, "double").reshape((3, 3))
-                rospy.loginfo(
-                    "camera_matrix :\n {}".format(self.camera_matrix)
-                )
+                rospy.loginfo("camera_matrix :\n {}".format(self.camera_matrix))
                 break
             except:
                 rospy.logwarn("Waiting for message /camera/color/camera_info.")
@@ -98,7 +97,7 @@ class Processor:
         self.pub_pose_lpf = rospy.Publisher("/pose_lpf", PoseArray, queue_size=10)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
-        self.blocks_info_lpf = [None] * 9   ## low pass filtered blocks_info
+        self.blocks_info_lpf = [None] * 9  ## low pass filtered blocks_info
 
     def imageCallback(self, image: Image):
         self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
@@ -111,9 +110,7 @@ class Processor:
         id_list, tvec_list, rvec_list = [], [], []
         if locked_current_mode != ModeRequese.DoNothing:
             id_list, _, _, tvec_list, rvec_list = marker_detection(
-                self.image,
-                self.camera_matrix,
-                self.verbose
+                self.image, self.camera_matrix, self.verbose
             )
         ## update gameinfo (and publish)
         self.update_gameinfo(id_list, tvec_list)
@@ -124,15 +121,23 @@ class Processor:
         ## publish gpose for visualization in rviz
         pose_msg = PoseArray()
         pose_msg.header.frame_id = "map"
-        pose_msg.poses = [blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None]
+        pose_msg.poses = [
+            blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None
+        ]
         self.pub_gpose_raw.publish(pose_msg)
-        pose_msg.poses = [blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None]
+        pose_msg.poses = [
+            blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None
+        ]
         self.pub_gpose_lpf.publish(pose_msg)
 
         pose_msg.header.frame_id = "camera_aligned_depth_to_color_frame_correct"
-        pose_msg.poses = [blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None]
+        pose_msg.poses = [
+            blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None
+        ]
         self.pub_pose_raw.publish(pose_msg)
-        pose_msg.poses = [blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None]
+        pose_msg.poses = [
+            blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None
+        ]
         self.pub_pose_lpf.publish(pose_msg)
         return
 
@@ -161,22 +166,24 @@ class Processor:
         if self.detected_gameinfo is None:
             self.detected_gameinfo = gameinfo
         if tuple(self.detected_gameinfo) != tuple(gameinfo):
-            rospy.logerr(f"detected different gameinfo: {gameinfo}, expected: {self.detected_gameinfo}")
+            rospy.logerr(
+                f"detected different gameinfo: {gameinfo}, expected: {self.detected_gameinfo}"
+            )
         ## publish gameinfo
         self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         print(f"gameinfo: {gameinfo}")
         return
-    
-    def point2array(self, point:Point) -> np.ndarray:
+
+    def point2array(self, point: Point) -> np.ndarray:
         return np.array([point.x, point.y, point.z])
-    
+
     def array2point(self, array) -> Point:
         point = Point()
         point.x, point.y, point.z = array
         return point
 
     def low_pass_filter(self, last_pos, new_pos, inertia=0.95) -> np.array:
-        return inertia * last_pos + (1-inertia) * new_pos
+        return inertia * last_pos + (1 - inertia) * new_pos
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
         """update blocks_info (block 1-6 and B, O, X) and publish it"""
@@ -220,11 +227,18 @@ class Processor:
                 if self.blocks_info[i] is not None:
                     gp1 = self.point2array(self.blocks_info[i][1].position)
                     gp2 = self.point2array(gpose_list[idx].position)
-                    dist = np.linalg.norm(gp1-gp2)
+                    dist = np.linalg.norm(gp1 - gp2)
                     if np.linalg.norm(gp1 - gp2) > 0.2:
-                        rospy.logwarn( f"Block {id} has moved a lot ({dist:.2f}) from {gp1} to {gp2}. Maybe misdetection.")
+                        rospy.logwarn(
+                            f"Block {id} has moved a lot ({dist:.2f}) from {gp1} to {gp2}. Maybe misdetection."
+                        )
                 ###################################
-                self.blocks_info[i] = [pose_list[idx], gpose_list[idx], self.this_image_time_ms, True]  ## in_cam is True if id in id_list
+                self.blocks_info[i] = [
+                    pose_list[idx],
+                    gpose_list[idx],
+                    self.this_image_time_ms,
+                    True,
+                ]  ## in_cam is True if id in id_list
             elif self.blocks_info[i] is not None:
                 ## update pose_in_cam with last gpose (last pose_in_cam is out-of-date)
                 ## Assumption: block's not moving
@@ -245,8 +259,12 @@ class Processor:
                 p2 = self.point2array(self.blocks_info[i][0].position)
                 gp1 = self.point2array(self.blocks_info_lpf[i][1].position)
                 gp2 = self.point2array(self.blocks_info[i][1].position)
-                self.blocks_info_lpf[i][0].position = self.array2point(self.low_pass_filter(p1, p2))
-                self.blocks_info_lpf[i][1].position = self.array2point(self.low_pass_filter(gp1, gp2))
+                self.blocks_info_lpf[i][0].position = self.array2point(
+                    self.low_pass_filter(p1, p2)
+                )
+                self.blocks_info_lpf[i][1].position = self.array2point(
+                    self.low_pass_filter(gp1, gp2)
+                )
         ## publish blocks info
         self.publish_blocks_info()
         return
@@ -312,6 +330,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=False)
     rospy.loginfo("Image thread started")
     rospy.spin()
