@@ -68,6 +68,10 @@ class manipulator:
         self.Kd = 0.0
         self.desired_cube_pos_arm_base = [0.5, 0.0]
         self.desired_tag_pos_arm_base = [0.5, 0.0]
+        self.max_velocity = 0.5
+        self.min_velocity = 0.1
+        self.max_angular_velocity = 0.5
+        self.min_angular_velocity = 0.1
         ############### Dynamic params ###############
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -356,8 +360,18 @@ class manipulator:
         self.Kd = config["Kd"]
         self.desired_tag_pos_arm_base[0] = config["desired_tag_x"]
         self.desired_tag_pos_arm_base[1] = config["desired_tag_y"]
+        self.max_velocity = config["max_velocity"]
+        self.min_velocity = config["min_velocity"]
+        self.max_angular_velocity = config["max_angular_velocity"]
+        self.min_angular_velocity = config["min_angular_velocity"]
         self.seperate_I_threshold = config["seperate_I_threshold"]
 
+        self.arm_act.apply_velocity_limit(
+            self.max_velocity,
+            self.max_angular_velocity,
+            self.min_velocity,
+            self.min_angular_velocity,
+        )
         self.align_act.set_pid_param(
             self.Kp, self.Ki, self.Kd, self.seperate_I_threshold
         )
