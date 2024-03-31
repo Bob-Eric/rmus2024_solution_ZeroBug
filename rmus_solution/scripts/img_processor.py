@@ -151,7 +151,7 @@ class Processor:
         ## quads of gameinfo are high, so y component in camera frame is small. (x, y axis
         ##  of camera frame points right and downwards respectively), typical value is around -0.26.
         digit_list = [
-            (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.2
+            (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.15
         ]
         if len(digit_list) != 3:
             # print(f"detected {len(digit_list)} digits in gameinfo board, not 3")
@@ -180,9 +180,9 @@ class Processor:
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
         """update blocks_info (block 1-6 and B, O, X) and publish it"""
-        ## filter out gameinfo quads (t[1] < -0.2)
+        ## filter out gameinfo quads (t[1] < -0.15)
         for i in reversed(range(len(id_list))):
-            if tvec_list[i][1] < -0.2:
+            if tvec_list[i][1] < -0.15:
                 id_list.pop(i)
                 tvec_list.pop(i)
                 rvec_list.pop(i)
