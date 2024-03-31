@@ -124,7 +124,7 @@ bool RPPPlanner::setPlan(const std::vector<geometry_msgs::PoseStamped>& orig_glo
     return false;
   }
 
-  ROS_INFO("Got new plan");
+  // ROS_INFO("Got new plan");
 
   // set new plan
   global_plan_.clear();

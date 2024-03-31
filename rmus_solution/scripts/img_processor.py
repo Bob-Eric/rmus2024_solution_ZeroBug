@@ -102,6 +102,8 @@ class Processor:
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
         self.pub_gpose_raw = rospy.Publisher("/gpose_raw", PoseArray, queue_size=10)
         self.pub_gpose_lpf = rospy.Publisher("/gpose_lpf", PoseArray, queue_size=10)
+        self.pub_pose_raw = rospy.Publisher("/pose_raw", PoseArray, queue_size=10)
+        self.pub_pose_lpf = rospy.Publisher("/pose_lpf", PoseArray, queue_size=10)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
         self.blocks_info_lpf = [None] * 9   ## low pass filtered blocks_info
@@ -134,6 +136,12 @@ class Processor:
         self.pub_gpose_raw.publish(pose_msg)
         pose_msg.poses = [blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None]
         self.pub_gpose_lpf.publish(pose_msg)
+
+        pose_msg.header.frame_id = "camera_aligned_depth_to_color_frame_correct"
+        pose_msg.poses = [blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None]
+        self.pub_pose_raw.publish(pose_msg)
+        pose_msg.poses = [blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None]
+        self.pub_pose_lpf.publish(pose_msg)
         return
 
     def depthCallback(self, image):
