@@ -128,7 +128,7 @@ class arm_action:
         twist.angular.x = 0.0
         twist.angular.y = 0.0
         self.__cmd_vel_pub.publish(twist)
-        rospy.loginfo(prefix + f"send cmd_vel: {vel}")
+        # rospy.loginfo(prefix + f"send cmd_vel: {vel}")
 
     def apply_velocity_limit(
         self,

@@ -241,7 +241,8 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
             self.align_act.set_measured_state(measured_state)
-            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
+            err = np.array(measured_state)-np.array(target_state)
+            rospy.loginfo(f"error: {1000*err[0]:.3f}mm, {1000*err[1]:.3f}mm, {np.rad2deg(err[2]):.3f}rad")
 
             if self.arm_act.can_arm_grasp_sometime(
                 marker_in_arm_base, 1.0, self.align_mode
@@ -352,7 +353,8 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
 
-            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
+            err = np.array(measured_state)-np.array(target_state)
+            rospy.loginfo(f"error: {1000*err[0]:.3f}mm, {1000*err[1]:.3f}mm, {np.rad2deg(err[2]):.3f}degree")
             self.align_act.set_measured_state(measured_state)
             if self.align_act.is_near_target_state_sometime(self.state_tolerance, 1.0):
                 self.arm_act.go_and_place()
