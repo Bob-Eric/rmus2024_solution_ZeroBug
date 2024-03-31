@@ -25,7 +25,7 @@
   <include file="$(find sim_env)/launch/include/navigation/move_base.launch.xml">
     <arg name="robot" value="ep_robot" />
     <arg name="global_planner" value="lazy_theta_star" />
-    <arg name="local_planner" value="rpp" />
+    <arg name="local_planner" value="teb" />
   </include>
 
 </launch>
