@@ -17,7 +17,6 @@ from scipy.spatial.transform import Rotation as R
 from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
 
-import matplotlib.pyplot as plt
 
 class ModeRequese(IntEnum):
     DoNothing = 0       ## disable marker_detection to save resources (160% cpu -> 60% cpu)

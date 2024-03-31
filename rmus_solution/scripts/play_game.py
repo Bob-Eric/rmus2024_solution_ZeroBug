@@ -39,23 +39,55 @@ class gamecore:
         self.gameinfo = None
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
         self.blockinfo_dict = {} ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
-        """ subscribe to gameinfo and blockinfo"""
+        ## subscribe to gameinfo and blockinfo
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
-        """ observe gameinfo first """
+        ## observe gameinfo first
         self.navigation(PointName.Home, "")
         self.aligner(AlignRequest.Reset, 0, 0, 0)
         rospy.sleep(2)
         self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation(PointName.Noticeboard_2, "")
+        self.navigation(PointName.Noticeboard_1, "")
         rospy.sleep(2)
         self.navigation(PointName.Noticeboard_2, "")
         rospy.sleep(2)
 
         """ gamecore logic: """
+        self.img_switch_mode(ModeRequese.BlockInfo)
         self.observation()
         # assert -1 not in self.block_mining_area.values()
-        self.grasp_and_place()
+        # self.grasp_and_place()
+        ######### for test #########
+        self.go_get_block(1)
+        self.aligner(AlignRequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(1)
+        self.stack(1, 7, 1)
+
+        self.go_get_block(2)
+        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(2)
+        self.stack(2, 8, 1)
+
+        self.go_get_block(3)
+        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(3)
+        self.stack(3, 9, 1)
+
+        self.go_get_block(4)
+        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(4)
+        self.stack(4, 7, 2)
+
+        self.go_get_block(5)
+        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(5)
+        self.stack(5, 8, 2)
+
+        self.go_get_block(6)
+        self.aligner(Alignrequest.PlaceFake, 0, 0, 0)
+        self.go_get_block(6)
+        self.stack(6, 9, 2)
+        ############################
         self.aligner(AlignRequest.Reset, 0, 0, 0)
         self.navigation(PointName.Park, "")
 
@@ -172,28 +204,30 @@ class gamecore:
             ## go to the front to check
             self.navigation(PointName.Station_Front, "")
             rospy.sleep(0.5)
-            ## if not in sight from the front, it must falls to the back
-            if not self.blockinfo_dict[block_id].in_cam:
-                print(f"Block {block_id} is not in sight from the front. Now go to the back.")
-                self.navigation(PointName.Station_Back, "")
-                rospy.sleep(0.5)
-            # assert self.blockinfo_dict[block_id].in_cam
-            ## if not in sight from the back... How could it possible?! just return false
-            if not self.blockinfo_dict[block_id].in_cam:
-                print(f"Block {block_id} is not in sight from the back. What the fuck?! I quit.")
-                return False
-            ## calc horizontal bias to check if block's stacked well
-            hbias = self.get_hbias(block_id, slot)
-            if self.get_layer(block_id) == layer and hbias < hbias_allow:
-                print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
-                return True
-            else:
-                print(f"Result: hbias of {hbias}.")
-            ## won't pick up the block at the last attempt
-            if i < max_attempt - 1:
-                self.aligner(AlignRequest.Grasp, block_id, 0, 0)
-                self.navigation(PointName.Station_Front, "")
-
+            ######### for test ########
+            return True
+            # ## if not in sight from the front, it must falls to the back
+            # if not self.blockinfo_dict[block_id].in_cam:
+            #     print(f"Block {block_id} is not in sight from the front. Now go to the back.")
+            #     self.navigation(PointName.Station_Back, "")
+            #     rospy.sleep(0.5)
+            # # assert self.blockinfo_dict[block_id].in_cam
+            # ## if not in sight from the back... How could it possible?! just return false
+            # if not self.blockinfo_dict[block_id].in_cam:
+            #     print(f"Block {block_id} is not in sight from the back. What the fuck?! I quit.")
+            #     return False
+            # ## calc horizontal bias to check if block's stacked well
+            # hbias = self.get_hbias(block_id, slot)
+            # if self.get_layer(block_id) == layer and hbias < hbias_allow:
+            #     print(f"Success: block {block_id} is in layer {layer} of slot {slot} with hbias of {hbias}.")
+            #     return True
+            # else:
+            #     print(f"Result: hbias of {hbias}.")
+            # ## won't pick up the block at the last attempt
+            # if i < max_attempt - 1:
+            #     self.aligner(AlignRequest.Grasp, block_id, 0, 0)
+            #     self.navigation(PointName.Station_Front, "")
+            ###########################
         print(f"Max attempt reached. stack failed.")
         return False
 
