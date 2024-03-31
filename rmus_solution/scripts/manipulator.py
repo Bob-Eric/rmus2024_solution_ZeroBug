@@ -5,14 +5,21 @@ import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
 from geometry_msgs.msg import Pose
-from rmus_solution.srv import graspsignal, graspsignalRequest, graspsignalResponse
+from rmus_solution.srv import (
+    graspsignal,
+    graspsignalRequest,
+    graspsignalResponse,
+    graspconfig,
+    graspconfigRequest,
+    graspconfigResponse,
+)
 from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulater_PIDConfig
 from enum import IntEnum
-from arm_ctrl import arm_action, align_action
+from arm_ctrl import arm_action, align_action, AlignMode
 
 
 class AlignRequest(IntEnum):
@@ -20,9 +27,6 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
     PlaceFake = 3
-
-
-prefix = "[manipulator]"
 
 
 class ErrorCode(IntEnum):
@@ -58,7 +62,7 @@ class manipulator:
         self.image_time_now = 0
         self.desired_marker_id = 0
 
-        self.state_tolerance = [0.01, 0.01, 0.1]
+        self.state_tolerance = [0.02, 0.02, 0.1]
 
         ############### Dynamic params ###############
         self.ros_rate = 10
@@ -68,6 +72,10 @@ class manipulator:
         self.Kd = 0.0
         self.desired_cube_pos_arm_base = [0.5, 0.0]
         self.desired_tag_pos_arm_base = [0.5, 0.0]
+        self.max_velocity = 0.5
+        self.min_velocity = 0.1
+        self.max_angular_velocity = 0.5
+        self.min_angular_velocity = 0.1
         ############### Dynamic params ###############
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -76,12 +84,19 @@ class manipulator:
         self.__marker_pose_sub = rospy.Subscriber(
             "/get_blockinfo", MarkerInfoList, self.marker_pose_callback, queue_size=1
         )
-        self.__service = rospy.Service(
+        self.__grasp_signal_service = rospy.Service(
             "/let_manipulater_work", graspsignal, self.grasp_signal_callback
+        )
+        self.__grasp_config_service = rospy.Service(
+            "/manipulater_config", graspconfig, self.grasp_config_callback
         )
         self.__dynamic_reconfigure_server = Server(
             manipulater_PIDConfig, self.dynamic_reconfigure_callback
         )
+        self.align_angle = False
+        self.align_mode = AlignMode.OpenLoop
+
+        self.align_act.set_align_config(self.align_angle, self.align_mode)
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
@@ -107,7 +122,7 @@ class manipulator:
         # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.image_time_now > 0.1:
-            rospy.loginfo(prefix + "latency detected!")
+            rospy.loginfo("latency detected!")
 
             # Go back for 0.5s
             if rospy.get_time() - initial_time > 1.0:
@@ -125,8 +140,6 @@ class manipulator:
 
         rate = rospy.Rate(self.ros_rate)
 
-        self.align_act.set_align_angle(req.align_angle)
-
         if req.mode == AlignRequest.Grasp:
             resp = self.grasp_cube_resp(rate)
             return resp
@@ -143,7 +156,7 @@ class manipulator:
             rospy.loginfo(resp.response)
             return resp
         else:
-            rospy.logerr(prefix + "Invalid mode")
+            rospy.logerr("Invalid mode")
             resp = graspsignalResponse()
             resp.res = False
             resp.error_code = ErrorCode.Fail
@@ -151,7 +164,16 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
+    def grasp_config_callback(self, req: graspconfigRequest):
+        self.align_angle = req.align_angle
+        self.align_mode = AlignMode(req.align_mode)
+        resp = graspconfigResponse()
+        self.align_act.set_align_config(self.align_angle, self.align_mode)
+        resp.res = True
+        return resp
+
     def grasp_cube_resp(self, rate):
+
         resp = graspsignalResponse()
 
         if not 1 <= self.desired_marker_id <= 6:
@@ -216,10 +238,15 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
             self.align_act.set_measured_state(measured_state)
-            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
+            err = np.array(measured_state)-np.array(target_state)
+            rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
 
-            if self.arm_act.can_arm_grasp_sometime(marker_in_arm_base, 1.0):
-                self.arm_act.go_and_grasp(marker_in_arm_base)
+            if self.arm_act.can_arm_grasp_sometime(
+                marker_in_arm_base, 1.0, self.align_mode
+            ) and self.align_act.is_near_target_state_sometime(
+                self.state_tolerance, 1.0
+            ):
+                self.arm_act.go_and_grasp(marker_in_arm_base, self.align_mode)
                 rospy.sleep(1.0)
                 if self.arm_act.has_grasped():
                     resp.res = True
@@ -232,7 +259,7 @@ class manipulator:
                     resp.error_code = ErrorCode.Fail
                     rospy.logwarn(resp.response)
                 break
-            elif self.align_act.is_setpoint_too_faraway():
+            elif self.align_act.is_target_state_too_faraway():
                 resp.res = False
                 resp.response = "Target is too far away"
                 resp.error_code = ErrorCode.TargetTooFaraway
@@ -270,7 +297,7 @@ class manipulator:
         if 1 <= place_layer <= 3:
             self.arm_act.preparation_for_place(place_layer)
         else:
-            rospy.logwarn(prefix + f"Invalid layer: {place_layer}")
+            rospy.logwarn(f"Invalid layer: {place_layer}")
             resp.res = False
             resp.response = "Invalid layer"
             resp.error_code = ErrorCode.InvalidLayer
@@ -323,11 +350,8 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
 
-            # rospy.loginfo(f"target_state: {target_state}")
-            # rospy.loginfo(f"measured_state: {measured_state}")
-            # rospy.loginfo(f"vel: {self.arm_act.get_last_vel()}")
-
-            rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
+            err = np.array(measured_state)-np.array(target_state)
+            rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
             self.align_act.set_measured_state(measured_state)
             if self.align_act.is_near_target_state_sometime(self.state_tolerance, 1.0):
                 self.arm_act.go_and_place()
@@ -356,8 +380,18 @@ class manipulator:
         self.Kd = config["Kd"]
         self.desired_tag_pos_arm_base[0] = config["desired_tag_x"]
         self.desired_tag_pos_arm_base[1] = config["desired_tag_y"]
+        self.max_velocity = config["max_velocity"]
+        self.min_velocity = config["min_velocity"]
+        self.max_angular_velocity = config["max_angular_velocity"]
+        self.min_angular_velocity = config["min_angular_velocity"]
         self.seperate_I_threshold = config["seperate_I_threshold"]
 
+        self.arm_act.apply_velocity_limit(
+            self.max_velocity,
+            self.max_angular_velocity,
+            self.min_velocity,
+            self.min_angular_velocity,
+        )
         self.align_act.set_pid_param(
             self.Kp, self.Ki, self.Kd, self.seperate_I_threshold
         )
@@ -377,8 +411,7 @@ class manipulator:
             rospy.Time.now(),
         ):
             rospy.logerr(
-                prefix
-                + f"pick_and_place: cannot find transform between {target_frame} and {source_frame}"
+                f"pick_and_place: cannot find transform between {target_frame} and {source_frame}"
             )
             return None, None
         posestamped_source = tf2_geometry_msgs.PoseStamped()

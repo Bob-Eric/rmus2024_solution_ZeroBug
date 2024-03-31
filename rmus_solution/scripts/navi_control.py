@@ -32,9 +32,6 @@ class PointName(IntEnum):
     End = 15
 
 
-prefix = "[navi_control]"
-
-
 class router:
     """
     brief
@@ -74,10 +71,10 @@ class router:
                 self.tfBuffer.lookup_transform(
                     "map", "base_link", rospy.Time(), timeout=rospy.Duration(2)
                 )
-                rospy.loginfo(prefix + "Get tf from map to base_link")
+                rospy.loginfo("Get tf from map to base_link")
                 break
             except:
-                rospy.logwarn(prefix + "Waiting for tf from map to base_link")
+                rospy.logwarn("Waiting for tf from map to base_link")
             rospy.sleep(0.5)
 
         rospy.Subscriber(
@@ -121,8 +118,8 @@ class router:
 
     def setgoalCallback(self, req: setgoalRequest):
         resp = setgoalResponse()
-        rospy.loginfo(prefix + ">>>>>>>>>>>>>>>>>>>>>>>>>")
-        rospy.loginfo(prefix + "req: call = {} point = {}".format(req.call, req.point))
+        rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
+        rospy.loginfo("req: call = {} point = {}".format(req.call, req.point))
 
         if 0 <= req.point < PointName.End:
             self.mission = PointName(req.point)
@@ -133,7 +130,7 @@ class router:
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
                     rospy.loginfo(
-                        prefix + "Reach Goal {}!".format(self.Points[self.mission][0])
+                        "Reach Goal {}!".format(self.Points[self.mission][0])
                     )
                     resp.res = True
                     resp.response = "Accomplish!"
@@ -143,7 +140,7 @@ class router:
                 r.sleep()
 
         else:
-            rospy.loginfo(prefix + "Invalid request!")
+            rospy.loginfo("Invalid request!")
             resp.res = False
             resp.response = "Invalid request!"
 
@@ -152,6 +149,6 @@ class router:
 
 if __name__ == "__main__":
     rospy.init_node("router", anonymous=True)
-    rospy.loginfo(prefix + ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     rter = router()
     rospy.spin()
