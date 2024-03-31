@@ -5,7 +5,14 @@ import numpy as np
 from scipy.spatial.transform import Rotation as sciR
 import rospy
 from geometry_msgs.msg import Pose
-from rmus_solution.srv import graspsignal, graspsignalRequest, graspsignalResponse
+from rmus_solution.srv import (
+    graspsignal,
+    graspsignalRequest,
+    graspsignalResponse,
+    graspconfig,
+    graspconfigRequest,
+    graspconfigResponse,
+)
 from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
@@ -20,6 +27,12 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
     PlaceFake = 3
+
+
+class AlignMode(IntEnum):
+    OpenLoop = 0
+    StateSpace = 1
+    PID = 2
 
 
 prefix = "[manipulator]"
@@ -80,8 +93,11 @@ class manipulator:
         self.__marker_pose_sub = rospy.Subscriber(
             "/get_blockinfo", MarkerInfoList, self.marker_pose_callback, queue_size=1
         )
-        self.__service = rospy.Service(
+        self.__grasp_signal_service = rospy.Service(
             "/let_manipulater_work", graspsignal, self.grasp_signal_callback
+        )
+        self.__grasp_config_service = rospy.Service(
+            "/manipulater_config", graspconfig, self.grasp_config_callback
         )
         self.__dynamic_reconfigure_server = Server(
             manipulater_PIDConfig, self.dynamic_reconfigure_callback
@@ -129,8 +145,6 @@ class manipulator:
 
         rate = rospy.Rate(self.ros_rate)
 
-        self.align_act.set_align_angle(req.align_angle)
-
         if req.mode == AlignRequest.Grasp:
             resp = self.grasp_cube_resp(rate)
             return resp
@@ -155,7 +169,15 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
+    def grasp_config_callback(self, req: graspconfigRequest):
+        resp = graspconfigResponse()
+        self.align_act.set_align_angle(req.align_angle)
+
+        resp.res = True
+        return resp
+
     def grasp_cube_resp(self, rate):
+
         resp = graspsignalResponse()
 
         if not 1 <= self.desired_marker_id <= 6:
