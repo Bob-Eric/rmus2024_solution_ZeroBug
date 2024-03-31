@@ -17,9 +17,6 @@ class AlignMode(IntEnum):
     PID = 2
 
 
-prefix = "[arm_ctrl]"
-
-
 class arm_action:
 
     def __init__(self):
@@ -128,7 +125,7 @@ class arm_action:
         twist.angular.x = 0.0
         twist.angular.y = 0.0
         self.__cmd_vel_pub.publish(twist)
-        # rospy.loginfo(prefix + f"send cmd_vel: {vel}")
+        # rospy.loginfo(f"send cmd_vel: {vel}")
 
     def apply_velocity_limit(
         self,
@@ -150,7 +147,7 @@ class arm_action:
         open_gripper_msg.x = 0.0
         open_gripper_msg.y = 0.0
         open_gripper_msg.z = 0.0
-        rospy.loginfo(prefix + "open the gripper")
+        rospy.loginfo("open the gripper")
         self.__gripper_pub.publish(open_gripper_msg)
 
     def close_gripper(self):
@@ -158,7 +155,7 @@ class arm_action:
         close_gripper_msg.x = 1.0
         close_gripper_msg.y = 0.0
         close_gripper_msg.z = 0.0
-        rospy.loginfo(prefix + "close the gripper")
+        rospy.loginfo("close the gripper")
         self.__gripper_pub.publish(close_gripper_msg)
 
     def reset_pos(self):
@@ -170,11 +167,11 @@ class arm_action:
         reset_arm_msg.orientation.y = 0.0
         reset_arm_msg.orientation.z = 0.0
         reset_arm_msg.orientation.w = 0.0
-        rospy.loginfo(prefix + "reset the arm")
+        rospy.loginfo("reset the arm")
         self.__position_pub.publish(reset_arm_msg)
 
     def place_fake(self):
-        rospy.loginfo(prefix + "<manipulater>: place fake cube")
+        rospy.loginfo("<manipulator>: place fake cube")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = -0.08
@@ -185,7 +182,7 @@ class arm_action:
         self.reset_pos()
 
     def place_pos(self, place_layer: int = 1):
-        rospy.loginfo(prefix + "<manipulater>: now prepare to place (first layer)")
+        rospy.loginfo("<manipulator>: now prepare to place (first layer)")
         pose = Pose()
         pose.position.x = 0.21
         pose.position.y = -0.04 + 0.055 * (place_layer - 1)
@@ -207,25 +204,23 @@ class arm_action:
         rospy.sleep(1)
 
     def go_and_grasp(self, target_in_arm_base: list, align_mode: AlignMode):
+        print(f"-------------------- {target_in_arm_base} --------------------")
         if align_mode == AlignMode.OpenLoop:
             self.send_cmd_vel([0.25, 0.0, 0.0])
             rospy.sleep(0.3)
             self.send_cmd_vel([0.0, 0.0, 0.0])
             self.grasp_pos([0.19, 0.0, -0.08])
-
         else:
-
             self.send_cmd_vel([0.0, 0.0, 0.0])
             self.grasp_pos(target_in_arm_base)
 
         rospy.sleep(1.5)
-        rospy.loginfo(prefix + "Place: reach the goal for placing.")
+        rospy.loginfo("Place: reach the goal for placing.")
 
-        self.close_gripper()
-        rospy.sleep(0.25)
-
-        self.close_gripper()
-        rospy.sleep(0.25)
+        ## TODO: find out why example project do close_gripper() twice
+        for _ in range(2):
+            self.close_gripper()
+            rospy.sleep(0.25)
         self.reset_pos()
 
         self.send_cmd_vel([-0.3, 0.0, 0.0])
@@ -240,7 +235,7 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(1.0)
-        rospy.loginfo(prefix + "Place: reach the goal for placing.")
+        rospy.loginfo("Place: reach the goal for placing.")
 
         self.open_gripper()
         rospy.sleep(2.0)
@@ -251,8 +246,8 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
 
     def preparation_for_grasp(self):
-        rospy.loginfo(prefix + "First align then grasp")
-        rospy.loginfo(prefix + "align to the right place")
+        rospy.loginfo("First align then grasp")
+        rospy.loginfo("align to the right place")
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         self.open_gripper()
@@ -261,10 +256,10 @@ class arm_action:
     def preparation_for_place(self, place_layer: int):
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
-        rospy.loginfo(prefix + "First align then place")
+        rospy.loginfo("First align then place")
         self.place_pos(place_layer)
         rospy.sleep(2.0)
-        rospy.loginfo(prefix + "adjusting arm pose for place.")
+        rospy.loginfo("adjusting arm pose for place.")
         ...
 
 
@@ -416,19 +411,12 @@ class align_action:
             return False
 
     def is_near_target_state(self, tolerance: list):
-        satisfy_xy = np.linalg.norm(
-            np.array(self.__measured_state[0:2]) - np.array(self.__target_state[0:2])
-        ) <= np.linalg.norm(tolerance[0:2])
-
-        satisfy_ang = abs(self.__measured_state[2] - self.__target_state[2]) <= abs(
-            tolerance[2]
-        )
-
-        if self.align_angle == False:
-            satisfy_ang = True
-
-        satisfy = satisfy_xy and satisfy_ang
-        return satisfy
+        x1, y1, ang1 = self.__measured_state
+        x2, y2, ang2 = self.__target_state
+        x_th, y_th, ang_th = tolerance
+        satisfy_xy = abs(x1 - x2) < abs(x_th) and abs(y1 - y2) < abs(y_th)
+        satisfy_ang = abs(ang1 - ang2) < abs(ang_th) if self.align_angle else True
+        return satisfy_xy and satisfy_ang
 
     def is_target_state_too_faraway(self):
         return self.__measured_state[0] <= -0.5 or abs(self.__measured_state[1]) >= 2.0
