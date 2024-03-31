@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from enum import IntEnum
 from math import fabs
 import rospy
 import numpy as np
@@ -8,6 +9,13 @@ from geometry_msgs.msg import Point, Pose, Twist
 from simple_pid import PID
 import tf2_ros
 from geometry_msgs.msg import Pose, TransformStamped, Vector3
+
+
+class AlignMode(IntEnum):
+    OpenLoop = 0
+    StateSpace = 1
+    PID = 2
+
 
 prefix = "[arm_ctrl]"
 
@@ -215,7 +223,7 @@ class arm_action:
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(1.0)
         self.open_gripper()
-        rospy.sleep(0.5)
+        rospy.sleep(2.0)
 
         self.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
@@ -228,7 +236,7 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         self.open_gripper()
-        rospy.sleep(0.1)
+        rospy.sleep(2.0)
 
     def preparation_for_place(self, place_layer: int):
         self.send_cmd_vel([0.0, 0.0, 0.0])
@@ -257,6 +265,7 @@ class align_action:
         self.__decay_seperate_dist = 0.1
         self.__is_near_target_state_old = False
         self.__align_angle = True
+        self.__align_mode = AlignMode.StateSpace
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -278,22 +287,12 @@ class align_action:
         self.__pid_y.reset()
         self.__sep_Ki_thres = sep_Ki_thres
 
-    def set_setpoint(self, setpoint: list):
-        self.__setpoint = setpoint
-        self.__pid_x.setpoint = setpoint[0]
-        self.__pid_y.setpoint = setpoint[1]
-        self.__pid_x.reset()
-        self.__pid_y.reset()
-
     def set_sample_time(self, sample_time: float):
         self.__pid_x.sample_time = sample_time
         self.__pid_y.sample_time = sample_time
 
     def set_decay(self, decay: float):
         self.__decay = decay
-
-    def set_measured_point(self, measured_point: list):
-        self.__measured_state = measured_point
 
     def __cal_pid_vel(self, measured_pos: list):
         if (
@@ -311,13 +310,19 @@ class align_action:
 
         return [vel_x, vel_y, 0.0]
 
-    def set_align_angle(self, align_angle: bool):
+    def set_align_config(self, align_angle: bool, align_mode: AlignMode):
         self.__align_angle = align_angle
+        self.__align_mode = align_mode
 
     # x y theta
     def set_target_state(self, target_state: list):
         self.__target_state = target_state
         self.__setpoint = target_state[0:2]
+
+        self.__pid_x.setpoint = self.__setpoint[0]
+        self.__pid_y.setpoint = self.__setpoint[1]
+        self.__pid_x.reset()
+        self.__pid_y.reset()
 
     def set_measured_state(self, measured_state: list):
         self.__measured_state = measured_state
@@ -339,8 +344,11 @@ class align_action:
         return [vel_x, vel_y, vel_ang]
 
     def align(self):
-        # vel = self.__cal_pid_vel(self.__measured_point)
-        vel = self.__cal_custom_vel(self.__measured_state)
+        vel = [0.0, 0.0, 0.0]
+        if self.__align_mode == AlignMode.PID:
+            vel = self.__cal_pid_vel(self.__measured_state)
+        elif self.__align_mode == AlignMode.StateSpace:
+            vel = self.__cal_custom_vel(self.__measured_state)
         self.__arm_action.send_cmd_vel(vel)
 
         # only check if robot is saturating for 2.5s
