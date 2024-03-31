@@ -41,6 +41,7 @@ class arm_action:
         self.max_angular_vel = 0.3
         self.min_vel = 0.0
         self.min_angular_vel = 0.0
+        self.align_mode = AlignMode.OpenLoop
 
     def __cmd_vel_callback(self, msg: Twist):
         vel = [msg.linear.x, msg.linear.y, msg.angular.z]
@@ -72,19 +73,27 @@ class arm_action:
         # 1 for grasped something, 0 for not
         self.__gripper_state = msg.x
 
-    def can_arm_grasp_sometime(self, target_in_arm_base: list, timeout: float):
-        satisfy = self.can_arm_grasp(target_in_arm_base)
-        if satisfy and not self.__can_arm_grasp_old:
-            # check if the robot can grasp for the first time
-            self.__can_arm_grasp_start_time = rospy.get_time()
-            ...
-        self.__can_arm_grasp_old = satisfy
+    def can_arm_grasp_sometime(
+        self, target_in_arm_base: list, timeout: float, align_mode: AlignMode
+    ):
 
-        if satisfy and rospy.get_time() - self.__can_arm_grasp_start_time > timeout:
-            # check if the robot can grasp for timeout
+        return True
+
+        if align_mode == AlignMode.OpenLoop:
             return True
         else:
-            return False
+            satisfy = self.can_arm_grasp(target_in_arm_base)
+            if satisfy and not self.__can_arm_grasp_old:
+                # check if the robot can grasp for the first time
+                self.__can_arm_grasp_start_time = rospy.get_time()
+                ...
+            self.__can_arm_grasp_old = satisfy
+
+            if satisfy and rospy.get_time() - self.__can_arm_grasp_start_time > timeout:
+                # check if the robot can grasp for timeout
+                return True
+            else:
+                return False
 
     def can_arm_grasp(self, target_in_arm_base: list):
         if target_in_arm_base is None:
@@ -197,9 +206,18 @@ class arm_action:
         self.reset_pos()
         rospy.sleep(1)
 
-    def go_and_grasp(self, target_in_arm_base: list):
-        self.send_cmd_vel([0.0, 0.0, 0.0])
-        self.grasp_pos(target_in_arm_base)
+    def go_and_grasp(self, target_in_arm_base: list, align_mode: AlignMode):
+        if align_mode == AlignMode.OpenLoop:
+            self.send_cmd_vel([0.25, 0.0, 0.0])
+            rospy.sleep(0.3)
+            self.send_cmd_vel([0.0, 0.0, 0.0])
+            self.grasp_pos([0.19, 0.0, -0.08])
+
+        else:
+
+            self.send_cmd_vel([0.0, 0.0, 0.0])
+            self.grasp_pos(target_in_arm_base)
+
         rospy.sleep(1.5)
         rospy.loginfo(prefix + "Place: reach the goal for placing.")
 
@@ -215,13 +233,15 @@ class arm_action:
         self.send_cmd_vel([0.0, 0.0, 0.0])
 
     def go_and_place(self):
-        rospy.loginfo(prefix + "Align well in the all dimention, going open loop")
-        rospy.loginfo(prefix + "Place: reach the goal for placing.")
-        rospy.loginfo(prefix + "Align well in the horizon dimention")
+        if self.align_mode == AlignMode.OpenLoop:
+            self.send_cmd_vel([0.25, 0.0, 0.0])
+            rospy.sleep(0.3)
 
         self.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(1.0)
+        rospy.loginfo(prefix + "Place: reach the goal for placing.")
+
         self.open_gripper()
         rospy.sleep(2.0)
 
@@ -264,8 +284,8 @@ class align_action:
         self.__decay_near = 9
         self.__decay_seperate_dist = 0.1
         self.__is_near_target_state_old = False
-        self.__align_angle = True
-        self.__align_mode = AlignMode.StateSpace
+        self.align_angle = False
+        self.align_mode = AlignMode.OpenLoop
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -296,7 +316,9 @@ class align_action:
 
     def __cal_pid_vel(self, measured_pos: list):
         if (
-            np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.__setpoint))
+            np.linalg.norm(
+                np.array(measured_pos[0:2]) - np.array(self.__target_state[0:2])
+            )
             > self.__sep_Ki_thres
         ):
             self.__pid_x.Ki = 0
@@ -311,18 +333,27 @@ class align_action:
         return [vel_x, vel_y, 0.0]
 
     def set_align_config(self, align_angle: bool, align_mode: AlignMode):
-        self.__align_angle = align_angle
-        self.__align_mode = align_mode
+        self.align_angle = align_angle
+        self.align_mode = align_mode
+        self.__arm_action.align_mode = align_mode
 
     # x y theta
     def set_target_state(self, target_state: list):
         self.__target_state = target_state
-        self.__setpoint = target_state[0:2]
 
-        self.__pid_x.setpoint = self.__setpoint[0]
-        self.__pid_y.setpoint = self.__setpoint[1]
-        self.__pid_x.reset()
-        self.__pid_y.reset()
+        if self.align_mode == AlignMode.PID:
+            self.__pid_x.setpoint = self.__target_state[0]
+            self.__pid_y.setpoint = self.__target_state[1]
+            self.__pid_x.reset()
+            self.__pid_y.reset()
+        elif self.align_mode == AlignMode.OpenLoop:
+            self.__target_state[0] = 0.385
+            self.__target_state[1] = 0.0
+            self.__pid_x.setpoint = self.__target_state[0]
+            self.__pid_y.setpoint = self.__target_state[1]
+            self.__pid_x.reset()
+            self.__pid_y.reset()
+        #     ...
 
     def set_measured_state(self, measured_state: list):
         self.__measured_state = measured_state
@@ -338,16 +369,16 @@ class align_action:
         else:
             decay = self.__decay_near
 
-        vel_ang = decay * error[2] if self.__align_angle else 0.0
+        vel_ang = decay * error[2] if self.align_angle else 0.0
         vel_x = decay * error[0] + y * vel_ang
         vel_y = decay * error[1] - x * vel_ang
         return [vel_x, vel_y, vel_ang]
 
     def align(self):
         vel = [0.0, 0.0, 0.0]
-        if self.__align_mode == AlignMode.PID:
+        if self.align_mode == AlignMode.PID or self.align_mode == AlignMode.OpenLoop:
             vel = self.__cal_pid_vel(self.__measured_state)
-        elif self.__align_mode == AlignMode.StateSpace:
+        elif self.align_mode == AlignMode.StateSpace:
             vel = self.__cal_custom_vel(self.__measured_state)
         self.__arm_action.send_cmd_vel(vel)
 
@@ -392,10 +423,14 @@ class align_action:
         satisfy_ang = abs(self.__measured_state[2] - self.__target_state[2]) <= abs(
             tolerance[2]
         )
+
+        if self.align_angle == False:
+            satisfy_ang = True
+
         satisfy = satisfy_xy and satisfy_ang
         return satisfy
 
-    def is_setpoint_too_faraway(self):
+    def is_target_state_too_faraway(self):
         return self.__measured_state[0] <= -0.5 or abs(self.__measured_state[1]) >= 2.0
 
 
