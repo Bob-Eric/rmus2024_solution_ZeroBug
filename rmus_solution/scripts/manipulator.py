@@ -19,7 +19,7 @@ import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulater_PIDConfig
 from enum import IntEnum
-from arm_ctrl import arm_action, align_action
+from arm_ctrl import arm_action, align_action, AlignMode
 
 
 class AlignRequest(IntEnum):
@@ -27,12 +27,6 @@ class AlignRequest(IntEnum):
     Grasp = 1
     Place = 2
     PlaceFake = 3
-
-
-class AlignMode(IntEnum):
-    OpenLoop = 0
-    StateSpace = 1
-    PID = 2
 
 
 prefix = "[manipulator]"
@@ -171,8 +165,7 @@ class manipulator:
 
     def grasp_config_callback(self, req: graspconfigRequest):
         resp = graspconfigResponse()
-        self.align_act.set_align_angle(req.align_angle)
-
+        self.align_act.set_align_config(req.align_angle, AlignMode(req.align_mode))
         resp.res = True
         return resp
 
