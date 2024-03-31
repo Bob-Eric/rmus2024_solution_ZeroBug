@@ -96,6 +96,10 @@ class manipulator:
         self.__dynamic_reconfigure_server = Server(
             manipulater_PIDConfig, self.dynamic_reconfigure_callback
         )
+        self.align_angle = False
+        self.align_mode = AlignMode.OpenLoop
+
+        self.align_act.set_align_config(self.align_angle, self.align_mode)
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
@@ -164,8 +168,10 @@ class manipulator:
             return resp
 
     def grasp_config_callback(self, req: graspconfigRequest):
+        self.align_angle = req.align_angle
+        self.align_mode = AlignMode(req.align_mode)
         resp = graspconfigResponse()
-        self.align_act.set_align_config(req.align_angle, AlignMode(req.align_mode))
+        self.align_act.set_align_config(self.align_angle, self.align_mode)
         resp.res = True
         return resp
 
@@ -237,8 +243,12 @@ class manipulator:
             self.align_act.set_measured_state(measured_state)
             rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
 
-            if self.arm_act.can_arm_grasp_sometime(marker_in_arm_base, 1.0):
-                self.arm_act.go_and_grasp(marker_in_arm_base)
+            if self.arm_act.can_arm_grasp_sometime(
+                marker_in_arm_base, 1.0, self.align_mode
+            ) and self.align_act.is_near_target_state_sometime(
+                self.state_tolerance, 1.0
+            ):
+                self.arm_act.go_and_grasp(marker_in_arm_base, self.align_mode)
                 rospy.sleep(1.0)
                 if self.arm_act.has_grasped():
                     resp.res = True
@@ -251,7 +261,7 @@ class manipulator:
                     resp.error_code = ErrorCode.Fail
                     rospy.logwarn(resp.response)
                 break
-            elif self.align_act.is_setpoint_too_faraway():
+            elif self.align_act.is_target_state_too_faraway():
                 resp.res = False
                 resp.response = "Target is too far away"
                 resp.error_code = ErrorCode.TargetTooFaraway
@@ -341,10 +351,6 @@ class manipulator:
                 marker_in_base_link[1],
                 marker_ang_in_base_link,
             ]
-
-            # rospy.loginfo(f"target_state: {target_state}")
-            # rospy.loginfo(f"measured_state: {measured_state}")
-            # rospy.loginfo(f"vel: {self.arm_act.get_last_vel()}")
 
             rospy.loginfo(f"error: {np.array( measured_state)-np.array(target_state)}")
             self.align_act.set_measured_state(measured_state)
