@@ -3,6 +3,7 @@
 
 from enum import IntEnum
 from math import fabs
+from typing import Union
 import rospy
 import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
@@ -104,7 +105,7 @@ class arm_action:
         else:
             return False
 
-    def has_grasped(self):
+    def has_grasped(self) -> bool:
         return self.__gripper_state == 1
 
     def is_vel_active(self):
@@ -260,13 +261,10 @@ class arm_action:
         self.place_pos(place_layer)
         rospy.sleep(2.0)
         rospy.loginfo("adjusting arm pose for place.")
-        ...
 
 
 class align_action:
     def __init__(self, arm_act: arm_action):
-        self.__pid_x = PID()
-        self.__pid_y = PID()
         self.__arm_action = arm_act
         self.__base_link_pos_old = [0.0, 0.0]
         self.__delta_pos = 0.0
@@ -275,6 +273,13 @@ class align_action:
         self.__base_link_pos_timer = rospy.Timer(
             rospy.Duration(2.5), self.__base_link_pos_callback
         )
+        self.pid_cfg: dict[str, Union[float, PID]] = {
+            "Ki": 0.0,
+            "sep_dist": 0.0,
+            "xctl": PID(),
+            "yctl": PID(),
+        }  ## Ki is for sep_dist
+        self.ss_cfg = {"decay": 3, "decay_near": 9, "dist_thresh": 0.1}
         self.__decay = 3
         self.__decay_near = 9
         self.__decay_seperate_dist = 0.1
@@ -294,17 +299,20 @@ class align_action:
         self.__base_link_pos_old = base_link_pos
 
     def set_pid_param(self, Kp: float, Ki: float, Kd: float, sep_Ki_thres: float):
-        self.__Ki = Ki
-
-        self.__pid_x.tunings = (Kp, Ki, Kd)
-        self.__pid_y.tunings = (Kp, Ki, Kd)
-        self.__pid_x.reset()
-        self.__pid_y.reset()
-        self.__sep_Ki_thres = sep_Ki_thres
+        ## alias
+        xctl = self.pid_cfg["xctl"]
+        yctl = self.pid_cfg["yctl"]
+        ## set params
+        xctl.tunings = (Kp, Ki, Kd)
+        yctl.tunings = (Kp, Ki, Kd)
+        xctl.reset()
+        yctl.reset()
+        self.pid_cfg["sep_dist"] = sep_Ki_thres
+        self.pid_cfg["Ki"] = sep_Ki_thres
 
     def set_sample_time(self, sample_time: float):
-        self.__pid_x.sample_time = sample_time
-        self.__pid_y.sample_time = sample_time
+        self.pid_cfg["xctl"].sample_time = sample_time
+        self.pid_cfg["yctl"].sample_time = sample_time
 
     def set_decay(self, decay: float):
         self.__decay = decay
@@ -313,17 +321,16 @@ class align_action:
         if (
             np.linalg.norm(
                 np.array(measured_pos[0:2]) - np.array(self.__target_state[0:2])
-            )
-            > self.__sep_Ki_thres
+            ) > self.pid_cfg["sep_dist"]
         ):
-            self.__pid_x.Ki = 0
-            self.__pid_y.Ki = 0
+            self.pid_cfg["xctl"].Ki = 0
+            self.pid_cfg["yctl"].Ki = 0
         else:
-            self.__pid_x.Ki = self.__Ki
-            self.__pid_y.Ki = self.__Ki
+            self.pid_cfg["xctl"].Ki = self.pid_cfg["Ki"]
+            self.pid_cfg["yctl"].Ki = self.pid_cfg["Ki"]
 
-        vel_x = -self.__pid_x(measured_pos[0])
-        vel_y = -self.__pid_y(measured_pos[1])
+        vel_x = -self.pid_cfg["xctl"](measured_pos[0])
+        vel_y = -self.pid_cfg["yctl"](measured_pos[1])
 
         return [vel_x, vel_y, 0.0]
 
@@ -337,18 +344,17 @@ class align_action:
         self.__target_state = target_state
 
         if self.align_mode == AlignMode.PID:
-            self.__pid_x.setpoint = self.__target_state[0]
-            self.__pid_y.setpoint = self.__target_state[1]
-            self.__pid_x.reset()
-            self.__pid_y.reset()
+            self.pid_cfg["xctl"].setpoint = self.__target_state[0]
+            self.pid_cfg["yctl"].setpoint = self.__target_state[1]
+            self.pid_cfg["xctl"].reset()
+            self.pid_cfg["yctl"].reset()
         elif self.align_mode == AlignMode.OpenLoop:
             self.__target_state[0] = 0.385
             self.__target_state[1] = 0.0
-            self.__pid_x.setpoint = self.__target_state[0]
-            self.__pid_y.setpoint = self.__target_state[1]
-            self.__pid_x.reset()
-            self.__pid_y.reset()
-        #     ...
+            self.pid_cfg["xctl"].setpoint = self.__target_state[0]
+            self.pid_cfg["yctl"].setpoint = self.__target_state[1]
+            self.pid_cfg["xctl"].reset()
+            self.pid_cfg["yctl"].reset()
 
     def set_measured_state(self, measured_state: list):
         self.__measured_state = measured_state
