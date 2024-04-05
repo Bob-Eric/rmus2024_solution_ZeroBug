@@ -23,7 +23,7 @@ RPPPlanner:
   # lookahead
   lookahead_time: 1.5
   min_lookahead_dist: 0.15
-  max_lookahead_dist: 0.9
+  max_lookahead_dist: 0.5
 
   # constriants
   regulated_min_radius: 0.9
