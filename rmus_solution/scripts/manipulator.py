@@ -17,7 +17,7 @@ from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
-from rmus_solution.cfg import manipulater_PIDConfig
+from rmus_solution.cfg import manipulator_PIDConfig
 from enum import IntEnum
 from arm_ctrl import arm_action, align_action, AlignMode
 
@@ -53,15 +53,15 @@ base_link_frame = "base_link"
 
 
 class manipulator:
-
     def __init__(self) -> None:
+        """ actuator """
         self.arm_act = arm_action()
         self.align_act = align_action(self.arm_act)
-
-        self.current_marker_poses = Pose()
-        self.image_time_now = 0
-        self.desired_marker_id = 0
-
+        """ data """
+        self.stamp = 0              ## time stamp when received id and pose of target block
+        self.id_targ = 0            ## target block id
+        self.pose_targ = Pose()     ## target block pose
+        """ hyperparams """
         self.state_tolerance = [0.02, 0.02, 0.1]
 
         ############### Dynamic params ###############
@@ -70,8 +70,8 @@ class manipulator:
         self.Kp = 0.5
         self.Ki = 0.0
         self.Kd = 0.0
-        self.desired_cube_pos_arm_base = [0.5, 0.0]
-        self.desired_tag_pos_arm_base = [0.5, 0.0]
+        self.SP_pos_grasp = [0.5, 0.0]    ## desired pos of block in arm_base frame when grasping (SetPoint)
+        self.SP_pos_place = [0.5, 0.0]    ## desired pos of tag in arm_base frame when aligning to place (SetPoint)
         self.max_velocity = 0.5
         self.min_velocity = 0.1
         self.max_angular_velocity = 0.5
@@ -81,34 +81,28 @@ class manipulator:
         self.tfBuffer = tf2_ros.Buffer()
         tf2_ros.TransformListener(self.tfBuffer)
 
-        self.__marker_pose_sub = rospy.Subscriber(
-            "/get_blockinfo", MarkerInfoList, self.marker_pose_callback, queue_size=1
-        )
-        self.__grasp_signal_service = rospy.Service(
-            "/let_manipulater_work", graspsignal, self.grasp_signal_callback
-        )
-        self.__grasp_config_service = rospy.Service(
-            "/manipulater_config", graspconfig, self.grasp_config_callback
-        )
-        self.__dynamic_reconfigure_server = Server(
-            manipulater_PIDConfig, self.dynamic_reconfigure_callback
-        )
+        ## update markerinfo of target block
+        self.__marker_pose_sub = rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.marker_pose_callback, queue_size=1)
+        ## switch `ig_targ` and reset/grasp/place target block
+        self.__grasp_signal_service = rospy.Service("/let_manipulator_work", graspsignal, self.grasp_signal_callback)
+        self.__grasp_config_service = rospy.Service("/manipulator_config", graspconfig, self.grasp_config_callback)
+        self.__dynamic_reconfigure_server = Server(manipulator_PIDConfig, self.dynamic_reconfigure_callback)
         self.align_angle = False
         self.align_mode = AlignMode.OpenLoop
-
         self.align_act.set_align_config(self.align_angle, self.align_mode)
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
         for markerInfo in msg.markerInfoList:
             markerInfo: MarkerInfo
-            if markerInfo.id == self.desired_marker_id:
-                self.current_marker_poses = markerInfo.pose
-                self.image_time_now = rospy.get_time()
+            if markerInfo.id == self.id_targ:
+                self.pose_targ = markerInfo.pose
+                self.stamp = rospy.get_time()
 
     def grasp_signal_callback(self, req: graspsignalRequest):
-        self.desired_marker_id = req.marker_id
-        # Reset the arm
+        """ call `grasp()`, `place()` or `place_fake()` according to grasp signal """
+        self.id_targ = req.marker_id
+        # reset the arm
         if req.mode == AlignRequest.Reset:
             self.arm_act.reset_pos()
             self.arm_act.open_gripper()
@@ -118,10 +112,9 @@ class manipulator:
             resp.error_code = ErrorCode.Success
             rospy.loginfo(resp.response)
             return resp
-
-        # If image_time is too old, rejects to grasp or place cube, instead just go back for sometime
+        # if image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
-        while rospy.get_time() - self.image_time_now > 0.1:
+        while rospy.get_time() - self.stamp > 0.1:
             rospy.loginfo("latency detected!")
 
             # Go back for 0.5s
@@ -141,20 +134,11 @@ class manipulator:
         rate = rospy.Rate(self.ros_rate)
 
         if req.mode == AlignRequest.Grasp:
-            resp = self.grasp_cube_resp(rate)
-            return resp
-
+            return self.grasp(rate)
         elif req.mode == AlignRequest.Place:
-            resp = self.place_cube_resp(rate, req.layer)
-            return resp
+            return self.place(rate, req.layer)
         elif req.mode == AlignRequest.PlaceFake:
-            self.arm_act.place_fake()
-            resp = graspsignalResponse()
-            resp.res = True
-            resp.response = "Place fake cube"
-            resp.error_code = ErrorCode.Success
-            rospy.loginfo(resp.response)
-            return resp
+            return self.drop()
         else:
             rospy.logerr("Invalid mode")
             resp = graspsignalResponse()
@@ -172,45 +156,34 @@ class manipulator:
         resp.res = True
         return resp
 
-    def grasp_cube_resp(self, rate):
-
+    def grasp(self, rate):
+        """ call arm_ctrl to grasp block, will take a few seconds to return (AKA blocking type) """
         resp = graspsignalResponse()
 
-        if not 1 <= self.desired_marker_id <= 6:
+        if not 1 <= self.id_targ <= 6:
             resp.res = False
             resp.response = "Invalid marker id"
             resp.error_code = ErrorCode.InvalidMarkerID
-            rospy.logwarn(f"Invalid marker id: {self.desired_marker_id}")
+            rospy.logwarn(f"Invalid marker id: {self.id_targ}")
             return resp
 
         self.arm_act.preparation_for_grasp()
 
-        # self.align_act.set_setpoint(self.desired_cube_pos_arm_base)
-
-        desired_pose_arm_base = Pose()
-        desired_pose_arm_base.position.x = self.desired_cube_pos_arm_base[0]
-        desired_pose_arm_base.position.y = self.desired_cube_pos_arm_base[1]
-        desired_pose_arm_base.position.z = 0.0
-        desired_pose_arm_base.orientation.x = 0.0
-        desired_pose_arm_base.orientation.y = 0.0
-        desired_pose_arm_base.orientation.z = 0.0
-        desired_pose_arm_base.orientation.w = 1.0
-
-        desidre_cube_pos_base_link, desired_tag_ang_base_link = self.transfer_frame(
-            desired_pose_arm_base,
+        ## setpoint of block pose in frame `arm_base`
+        tmp = Pose()
+        tmp.position.x = self.SP_pos_grasp[0]
+        tmp.position.y = self.SP_pos_grasp[1]
+        tmp.orientation.w = 1.0
+        ## convert from frame `arm_base` to frame `base_link`
+        pos_sp, ang_sp = self.transfer_frame(
+            tmp,
             source_frame=arm_base_frame,
             target_frame=base_link_frame,
         )
-
-        target_state = [
-            desidre_cube_pos_base_link[0],
-            desidre_cube_pos_base_link[1],
-            desired_tag_ang_base_link,
-        ]
-        self.align_act.set_target_state(target_state)
+        x_sp = [pos_sp[0], pos_sp[1], ang_sp]
+        self.align_act.set_target_state(x_sp)
 
         max_time = rospy.get_time() + self.timeout
-
         while not rospy.is_shutdown():
             if rospy.get_time() > max_time:
                 resp.res = False
@@ -219,7 +192,7 @@ class manipulator:
                 rospy.logwarn(resp.response)
                 break
 
-            marker_pose_in_cam = self.current_marker_poses
+            marker_pose_in_cam = self.pose_targ
 
             marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
                 marker_pose_in_cam,
@@ -238,7 +211,7 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
             self.align_act.set_measured_state(measured_state)
-            err = np.array(measured_state)-np.array(target_state)
+            err = np.array(measured_state)-np.array(x_sp)
             rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
 
             if self.arm_act.can_arm_grasp_sometime(
@@ -278,20 +251,21 @@ class manipulator:
             rate.sleep()
         return resp
 
-    def place_cube_resp(self, rate, place_layer: int = 1):
+    def place(self, rate, place_layer: int = 1):
+        """ call arm_ctrl to place block, will take a few seconds to return (AKA blocking type) """
         resp = graspsignalResponse()
 
-        if 1 <= self.desired_marker_id <= 6:
+        if 1 <= self.id_targ <= 6:
             # align to the cube
             ...
-        elif 7 <= self.desired_marker_id <= 9:
+        elif 7 <= self.id_targ <= 9:
             # align to the marker
             ...
         else:
             resp.res = False
             resp.response = "Invalid marker id"
             resp.error_code = ErrorCode.InvalidMarkerID
-            rospy.logwarn(f"Invalid marker id: {self.desired_marker_id}")
+            rospy.logwarn(f"Invalid marker id: {self.id_targ}")
             return resp
 
         if 1 <= place_layer <= 3:
@@ -304,27 +278,19 @@ class manipulator:
             rospy.logwarn(resp.response)
             return resp
 
-        desired_pose_arm_base = Pose()
-        desired_pose_arm_base.position.x = self.desired_tag_pos_arm_base[0]
-        desired_pose_arm_base.position.y = self.desired_tag_pos_arm_base[1]
-        desired_pose_arm_base.position.z = 0.0
-        desired_pose_arm_base.orientation.x = 0.0
-        desired_pose_arm_base.orientation.y = 0.0
-        desired_pose_arm_base.orientation.z = 0.0
-        desired_pose_arm_base.orientation.w = 1.0
+        tmp = Pose()
+        tmp.position.x = self.SP_pos_place[0]
+        tmp.position.y = self.SP_pos_place[1]
+        tmp.orientation.w = 1.0
 
-        desidre_tag_pos_base_link, desired_tag_ang_base_link = self.transfer_frame(
-            desired_pose_arm_base,
+        pos_sp, ang_sp = self.transfer_frame(
+            tmp,
             source_frame=arm_base_frame,
             target_frame=base_link_frame,
         )
 
-        target_state = [
-            desidre_tag_pos_base_link[0],
-            desidre_tag_pos_base_link[1],
-            desired_tag_ang_base_link,
-        ]
-        self.align_act.set_target_state(target_state)
+        x_sp = [pos_sp[0], pos_sp[1], ang_sp]
+        self.align_act.set_target_state(x_sp)
 
         max_time = rospy.get_time() + self.timeout
 
@@ -336,7 +302,7 @@ class manipulator:
                 rospy.logwarn(resp.response)
                 break
 
-            marker_pose_in_cam = self.current_marker_poses
+            marker_pose_in_cam = self.pose_targ
 
             marker_in_base_link, marker_ang_in_base_link = self.transfer_frame(
                 marker_pose_in_cam,
@@ -350,7 +316,7 @@ class manipulator:
                 marker_ang_in_base_link,
             ]
 
-            err = np.array(measured_state)-np.array(target_state)
+            err = np.array(measured_state)-np.array(x_sp)
             rospy.loginfo(f"error: {1000*err[0]:.1f}mm, {1000*err[1]:.1f}mm, {np.rad2deg(err[2]):.1f}degree")
             self.align_act.set_measured_state(measured_state)
             if self.align_act.is_near_target_state_sometime(self.state_tolerance, 1.0):
@@ -370,16 +336,31 @@ class manipulator:
             rate.sleep()
         return resp
 
+    def drop(self):
+        """ drop block """
+        rospy.loginfo("<manipulator>: place fake cube")
+        self.arm_act.set_arm(0.21, -0.08)
+        rospy.sleep(2.0)
+        self.arm_act.open_gripper()
+        rospy.sleep(2.0)
+        self.arm_act.reset_pos()
+        resp = graspsignalResponse()
+        resp.res = True
+        resp.response = "Place fake cube"
+        resp.error_code = ErrorCode.Success
+        rospy.loginfo(resp.response)
+        return resp
+
     def dynamic_reconfigure_callback(self, config: dict, level: int):
         self.ros_rate = config["control_frequency"]
-        self.desired_cube_pos_arm_base[0] = config["desired_cube_x"]
-        self.desired_cube_pos_arm_base[1] = config["desired_cube_y"]
+        self.SP_pos_grasp[0] = config["desired_cube_x"]
+        self.SP_pos_grasp[1] = config["desired_cube_y"]
         self.timeout = config["timeout"]
         self.Kp = config["Kp"]
         self.Ki = config["Ki"]
         self.Kd = config["Kd"]
-        self.desired_tag_pos_arm_base[0] = config["desired_tag_x"]
-        self.desired_tag_pos_arm_base[1] = config["desired_tag_y"]
+        self.SP_pos_place[0] = config["desired_tag_x"]
+        self.SP_pos_place[1] = config["desired_tag_y"]
         self.max_velocity = config["max_velocity"]
         self.min_velocity = config["min_velocity"]
         self.max_angular_velocity = config["max_angular_velocity"]
@@ -441,7 +422,6 @@ class manipulator:
 
 
 if __name__ == "__main__":
-    rospy.init_node("manipulater_node", anonymous=True)
+    rospy.init_node("manipulator_node", anonymous=True)
     rter = manipulator()
-
     rospy.spin()

@@ -32,7 +32,7 @@ generate_messages(
 )
 
 
-generate_dynamic_reconfigure_options(cfg/manipulater_PID.cfg)
+generate_dynamic_reconfigure_options(cfg/manipulator_PID.cfg)
 
 catkin_package(
  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs message_runtime dynamic_reconfigure

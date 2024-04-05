@@ -160,43 +160,40 @@ class arm_action:
         self.__gripper_pub.publish(close_gripper_msg)
 
     def reset_pos(self):
-        reset_arm_msg = Pose()
-        reset_arm_msg.position.x = 0.1
-        reset_arm_msg.position.y = 0.12
-        reset_arm_msg.position.z = 0.0
-        reset_arm_msg.orientation.x = 0.0
-        reset_arm_msg.orientation.y = 0.0
-        reset_arm_msg.orientation.z = 0.0
-        reset_arm_msg.orientation.w = 0.0
+        self.set_arm(0.1, 0.12)
         rospy.loginfo("reset the arm")
-        self.__position_pub.publish(reset_arm_msg)
 
-    def place_fake(self):
-        rospy.loginfo("<manipulator>: place fake cube")
+    def set_arm(self, x:float, y:float):
+        """ 
+        a low level api to set arm position to (x, y) directly, unit: meter;
+        axes of x, y point forwards and upwards respectively, 
+            i.e. horizontal extension and vertical height
+        e.g. typical value of (extension, height)
+            reset:  (0.1, 0.12);
+            drop: (0.21, -0.08);     place: (0.21, h_layer)
+        """
         pose = Pose()
-        pose.position.x = 0.21
-        pose.position.y = -0.08
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = 0.0
+        pose.orientation.x = 0.0
+        pose.orientation.y = 0.0
+        pose.orientation.z = 0.0
+        pose.orientation.w = 1.0
         self.__position_pub.publish(pose)
-        rospy.sleep(2.0)
-        self.open_gripper()
-        rospy.sleep(2.0)
-        self.reset_pos()
 
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo("<manipulator>: now prepare to place (first layer)")
-        pose = Pose()
-        pose.position.x = 0.21
-        pose.position.y = -0.04 + 0.055 * (place_layer - 1)
-        self.__position_pub.publish(pose)
+        extension = 0.21
+        height = -0.04 + 0.055 * (place_layer - 1)
+        self.set_arm(extension, height)
 
     def grasp_pos(self, target_in_arm_base: list):
-        pose = Pose()
-
         # limit the grasp position 0.09 <= x <= 0.22, -0.08 <= y
-        pose.position.x = max(min(target_in_arm_base[0], 0.22), 0.09)
-        pose.position.y = max(target_in_arm_base[2], -0.08)
-        rospy.loginfo(f"moving to grasp position: {pose.position.x}, {pose.position.y}")
-        self.__position_pub.publish(pose)
+        extension = max(min(target_in_arm_base[0], 0.22), 0.09)
+        height = max(target_in_arm_base[2], -0.08)
+        rospy.loginfo(f"moving to grasp position: ({extension}, {height})")
+        self.set_arm(extension, height)
 
     def grasp_cube(self):
         self.close_gripper()
