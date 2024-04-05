@@ -13,13 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs
   tf2_ros
   visualization_msgs
-  global_planner
+  global_planner_custom
   utils
 )
 
 catkin_package(
  INCLUDE_DIRS include
- CATKIN_DEPENDS global_planner utils
+ CATKIN_DEPENDS global_planner_custom utils
 )
 
 include_directories(

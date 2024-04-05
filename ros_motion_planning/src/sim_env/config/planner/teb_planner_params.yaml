@@ -35,15 +35,15 @@ TebLocalPlannerROS:
   min_samples: 5 # default
   global_plan_overwrite_orientation: True
   global_plan_viapoint_sep: 0.1 # not fine-tuned
-  allow_init_with_backwards_motion: True
+  allow_init_with_backwards_motion: False
   max_global_plan_lookahead_dist: 2.0
   feasibility_check_no_poses: 4
   exact_arc_length: False
 
   # Robot
-  max_vel_x: 0.5
-  max_vel_x_backwards: 0.5
-  max_vel_y: 0.5 # for omnidirection
+  max_vel_x: 0.4
+  max_vel_x_backwards: 0.2
+  max_vel_y: 0.3 # for omnidirection
   max_vel_theta: 0.5
   acc_lim_x: 1.5
   acc_lim_y: 1.5 # for omnidirection
@@ -60,7 +60,7 @@ TebLocalPlannerROS:
   # GoalTolerance
   xy_goal_tolerance: 0.1
   yaw_goal_tolerance: 0.1
-  free_goal_vel: True
+  free_goal_vel: False
 
   # Obstacles
   min_obstacle_dist: 0.05 # 0.05 # a small value may be prefered
