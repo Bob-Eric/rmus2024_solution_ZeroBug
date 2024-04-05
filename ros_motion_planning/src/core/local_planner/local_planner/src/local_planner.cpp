@@ -18,6 +18,9 @@
 
 #include "local_planner.h"
 
+#include "backward.hpp"
+backward::SignalHandling sh;
+
 namespace local_planner {
   /**
    * @brief Construct a new Local Planner object
@@ -284,7 +287,7 @@ namespace local_planner {
     geometry_msgs::PointStamped& pt, double& theta, double& kappa) {
     double rx = robot_pose_global.pose.position.x;
     double ry = robot_pose_global.pose.position.y;
-
+    
     // Find the first pose which is at a distance greater than the lookahead distance
     auto goal_pose_it = std::find_if(prune_plan.begin(), prune_plan.end(), [&](const auto& ps) {
       return helper::dist(ps, robot_pose_global) >= lookahead_dist;
@@ -321,9 +324,20 @@ namespace local_planner {
 
 
       std::vector<std::pair<double, double>> i_points;
-      while (i_points.size() == 0 && lookahead_dist > 0.0) {
+      i_points = helper::circleSegmentIntersection(prev_p, goal_p, lookahead_dist);
+      const double look_ahead_dist_max = 1.5;
+      const double increase_lookahead_dist = 0.025;
+
+      if (i_points.size() == 0) {
+        lookahead_dist = 0;
+      }
+
+      while (i_points.size() == 0 && lookahead_dist < look_ahead_dist_max) {
+        ROS_WARN("No intersection found, searching lookahead distance from 0 to %f", look_ahead_dist_max);
+        ROS_INFO("Prev_x: %.2f, Prev_y: %.2f, Goal_x: %.2f, Goal_y: %.2f, Lookahead distance: %.2f", prev_p.first, prev_p.second,
+          goal_p.first, goal_p.second, lookahead_dist);
         i_points = helper::circleSegmentIntersection(prev_p, goal_p, lookahead_dist);
-        lookahead_dist += 0.025;
+        lookahead_dist += increase_lookahead_dist;
       }
 
 
