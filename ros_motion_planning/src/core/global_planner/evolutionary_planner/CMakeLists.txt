@@ -12,14 +12,14 @@ find_package(catkin REQUIRED COMPONENTS
   pluginlib
   tf2_geometry_msgs
   tf2_ros
-  global_planner
+  global_planner_custom
   curve_generation
   utils
 )
 
 catkin_package(
  INCLUDE_DIRS include
- CATKIN_DEPENDS global_planner curve_generation utils
+ CATKIN_DEPENDS global_planner_custom curve_generation utils
 )
 
 include_directories(
