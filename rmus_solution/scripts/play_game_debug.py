@@ -20,7 +20,7 @@ class gamecore:
 
         rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
-        self.aligner = rospy.ServiceProxy("/let_manipulater_work", graspsignal)
+        self.aligner = rospy.ServiceProxy("/let_manipulator_work", graspsignal)
         self.img_switch_mode = rospy.ServiceProxy(
             "/image_processor_switch_mode", switch
         )
@@ -63,10 +63,10 @@ class gamecore:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_service("/let_manipulater_work", 1.0)
+                rospy.wait_for_service("/let_manipulator_work", 1.0)
                 break
             except:
-                rospy.logwarn("Waiting for let_manipulater_work Service")
+                rospy.logwarn("Waiting for let_manipulator_work Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():

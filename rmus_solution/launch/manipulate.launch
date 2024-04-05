@@ -11,7 +11,7 @@
         name="camera_aligned_depth_to_color_frame_correct"
         args="0 0 0 -0.5 0.5 -0.5 0.5  camera_aligned_depth_to_color_frame   camera_aligned_depth_to_color_frame_correct" />
 
-    <!-- manipulater -->
+    <!-- manipulator -->
     <node pkg="rmus_solution" type="manipulator.py" name="shadow_aligner" output="screen"></node>
 
     <!-- img_processor -->

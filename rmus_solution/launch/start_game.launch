@@ -5,7 +5,7 @@
     <node pkg="rmus_solution" type="play_game.py" name="game_top_node" output="screen" />
 
     <node pkg="dynamic_reconfigure" type="dynparam" name="dynparam"
-        args="load shadow_aligner $(find rmus_solution)/params/manipulater.yaml" output="screen" />
+        args="load shadow_aligner $(find rmus_solution)/params/manipulator.yaml" output="screen" />
 
     <include file="$(find rmus_solution)/launch/local_navigation.launch" />
     <!-- <include file="$(find ep_teleop)/launch/keyboard.launch" /> -->
