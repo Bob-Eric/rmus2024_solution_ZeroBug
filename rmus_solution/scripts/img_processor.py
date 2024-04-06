@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from typing import Union
 import rospy
 import tf2_ros
 import tf2_geometry_msgs
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose, PoseArray, Point
+from geometry_msgs.msg import Pose, PoseArray, Point, TransformStamped
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
@@ -16,6 +17,10 @@ from threading import Thread
 from scipy.spatial.transform import Rotation as R
 from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
+
+
+coord_cam = "camera_aligned_depth_to_color_frame_correct"
+coord_glb = "map"
 
 
 class ModeRequese(IntEnum):
@@ -88,6 +93,7 @@ class Processor:
         rospy.Subscriber(
             "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
         )
+        self.br = tf2_ros.TransformBroadcaster()
         rospy.Service("/image_processor_switch_mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
@@ -118,9 +124,16 @@ class Processor:
         self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
 
+        ## send tf for visualization
+        for i in range(len(self.blocks_info)):
+            if self.blocks_info[i] is not None and self.blocks_info_lpf[i] is not None:
+                self.send_block_tf(
+                    i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info_lpf[i][1]
+                )
+
         ## publish gpose for visualization in rviz
         pose_msg = PoseArray()
-        pose_msg.header.frame_id = "map"
+        pose_msg.header.frame_id = coord_glb
         pose_msg.poses = [
             blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None
         ]
@@ -130,7 +143,7 @@ class Processor:
         ]
         self.pub_gpose_lpf.publish(pose_msg)
 
-        pose_msg.header.frame_id = "camera_aligned_depth_to_color_frame_correct"
+        pose_msg.header.frame_id = coord_cam
         pose_msg.poses = [
             blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None
         ]
@@ -150,6 +163,29 @@ class Processor:
             return switchResponse(self.current_mode)
         else:
             return switchResponse(req.mode)
+
+    def send_block_tf(
+        self, block_id, pose: Union[Pose, None] = None, gpose: Union[Pose, None] = None
+    ):
+        tf_pose = TransformStamped()
+        tf_pose.header.stamp = rospy.Time.now()
+
+        if gpose is not None:
+            tf_pose.header.frame_id = coord_glb
+            tf_pose.child_frame_id = f"gpose_block_{block_id}"
+            tf_pose.transform.translation.x = gpose.position.x
+            tf_pose.transform.translation.y = gpose.position.y
+            tf_pose.transform.translation.z = gpose.position.z
+            tf_pose.transform.rotation = gpose.orientation
+            self.br.sendTransform(tf_pose)
+        if pose is not None:
+            tf_pose.header.frame_id = coord_cam
+            tf_pose.child_frame_id = f"pose_block_{block_id}"
+            tf_pose.transform.translation.x = pose.position.x
+            tf_pose.transform.translation.y = pose.position.y
+            tf_pose.transform.translation.z = pose.position.z
+            tf_pose.transform.rotation = pose.orientation
+            self.br.sendTransform(tf_pose)
 
     def update_gameinfo(self, id_list, tvec_list):
         gameinfo = [0, 0, 0]
@@ -196,8 +232,6 @@ class Processor:
         ## get transform of coord_cam and coord_glb
         pose_list = [pose_aruco_2_ros(r, t) for t, r in zip(tvec_list, rvec_list)]
         gpose_list = []
-        coord_cam = "camera_aligned_depth_to_color_frame_correct"
-        coord_glb = "map"
         try:
             trans = self.tfBuffer.lookup_transform(
                 coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
@@ -330,6 +364,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=False)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()
