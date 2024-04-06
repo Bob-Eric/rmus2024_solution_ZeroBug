@@ -8,6 +8,10 @@ global_costmap:
 
   inflation_radius: 0.4
 
+  keep_out_layer:
+    enabled: true
+    fill_zones: true
+
   ### Sensor management parameters ###
   obstacle_layer:
     observation_sources: scan
