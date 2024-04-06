@@ -67,6 +67,10 @@ namespace rpp_planner {
       nh.param("base_frame", base_frame_, base_frame_);
       nh.param("map_frame", map_frame_, map_frame_);
 
+      goal_dist_tol_half_ = goal_dist_tol_ / 2.0;
+      goal_dist_tol_ = goal_dist_tol_half_;
+      first_reach_goal_xy_ = true;
+
       // lookahead
       nh.param("lookahead_time", lookahead_time_, 1.5);
       nh.param("min_lookahead_dist", min_lookahead_dist_, 0.3);
@@ -187,12 +191,19 @@ namespace rpp_planner {
     // calculate commands
     if (shouldRotateToGoal(robot_pose_map, global_plan_.back())) {
       double e_theta = regularizeAngle(goal_rpy_.z() - tf2::getYaw(robot_pose_map.pose.orientation));
+      if (first_reach_goal_xy_) {
+        goal_dist_tol_ = goal_dist_tol_half_ * 2.0;
+        first_reach_goal_xy_ = false;
+      }
+
 
       // orientation reached
       if (!shouldRotateToPath(std::fabs(e_theta))) {
         cmd_vel.linear.x = 0.0;
         cmd_vel.angular.z = 0.0;
         goal_reached_ = true;
+        first_reach_goal_xy_ = true;
+        goal_dist_tol_ = goal_dist_tol_half_;
       }
       // orientation not reached
       else {
