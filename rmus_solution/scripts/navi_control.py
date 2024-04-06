@@ -143,15 +143,15 @@ class router:
         self.KeepOutPoints = {
             KeepOutArea.MiningArea_0: {
                 "pose": getPoints(mining_area_center[0], size),
-                "id": 1000,
+                "id": None,
             },
             KeepOutArea.MiningArea_1: {
                 "pose": getPoints(mining_area_center[1], size),
-                "id": 1000,
+                "id": None,
             },
             KeepOutArea.MiningArea_2: {
                 "pose": getPoints(mining_area_center[2], size),
-                "id": 1000,
+                "id": None,
             },
         }
         return self.KeepOutPoints
@@ -162,30 +162,48 @@ class router:
         cost = 0
         resp = keepoutmodeResponse()
 
-        if mode == KeepOutMode.AddByArea:
-            id = self.__xju_service(0, cost, self.KeepOutPoints[area]["pose"], 0)
-            self.KeepOutPoints[area]["id"] = id
-            resp.success = True
-            message = "Add KeepOutArea_{}!".format(area)
-            resp.message = message
-            rospy.loginfo(message)
-        elif mode == KeepOutMode.AddAll:
+        if mode == KeepOutMode.AddAll:
             for area in self.KeepOutPoints:
-                id = self.__xju_service(0, cost, self.KeepOutPoints[area]["pose"], 0)
-                self.KeepOutPoints[area]["id"] = id
+                if self.KeepOutPoints[area]["id"] is None:
+                    xju_resp: keepOutZoneResponse = self.__xju_service(
+                        0, cost, self.KeepOutPoints[area]["pose"], 0
+                    )
+                    self.KeepOutPoints[area]["id"] = xju_resp.id
+                else:
+                    rospy.loginfo("KeepOutArea_{} already exists!".format(area))
             message = "Add All KeepOutArea!"
-            resp.success = True
-            resp.message = message
-            rospy.loginfo(message)
-        elif mode == KeepOutMode.RemoveByArea:
-            self.__xju_service(1, cost, [], self.KeepOutPoints[area]["id"])
-            message = "Delete KeepOutArea_{}!".format(area)
             resp.success = True
             resp.message = message
             rospy.loginfo(message)
         elif mode == KeepOutMode.RemoveAll:
             self.__xju_service(2, cost, [], 0)
             message = "Delete All KeepOutArea!"
+            resp.success = True
+            resp.message = message
+            rospy.loginfo(message)
+            self.KeepOutPoints[KeepOutArea.MiningArea_0]["id"] = None
+            self.KeepOutPoints[KeepOutArea.MiningArea_1]["id"] = None
+            self.KeepOutPoints[KeepOutArea.MiningArea_2]["id"] = None
+
+        elif mode == KeepOutMode.AddByArea:
+            if self.KeepOutPoints[area]["id"] is None:
+                xju_resp: keepOutZoneResponse = self.__xju_service(
+                    0, cost, self.KeepOutPoints[area]["pose"], 0
+                )
+                self.KeepOutPoints[area]["id"] = xju_resp.id
+            else:
+                rospy.loginfo("KeepOutArea_{} already exists!".format(area))
+            resp.success = True
+            message = "Add KeepOutArea_{}!".format(area)
+            resp.message = message
+            rospy.loginfo(message)
+        elif mode == KeepOutMode.RemoveByArea:
+            if self.KeepOutPoints[area]["id"] is not None:
+                self.__xju_service(1, cost, [], self.KeepOutPoints[area]["id"])
+                self.KeepOutPoints[area]["id"] = None
+            else:
+                rospy.loginfo("KeepOutArea_{} does not exist!".format(area))
+            message = "Delete KeepOutArea_{}!".format(area)
             resp.success = True
             resp.message = message
             rospy.loginfo(message)

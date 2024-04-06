@@ -33,12 +33,16 @@
     <!-- multi -->
     <group ns="$(arg robot_namespace)" if="$(arg start_ns)">
         <param name="tf_prefix" value="$(arg robot_namespace)" />
-        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen" />
-        <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher" output="screen" />
-        <param name="robot_description" command="$(find xacro)/xacro --inorder $(find sim_env)/urdf/$(arg robot)/$(arg robot).xacro" />
+        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+            output="screen" />
+        <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher"
+            output="screen" />
+        <param name="robot_description"
+            command="$(find xacro)/xacro  $(find sim_env)/urdf/$(arg robot)/$(arg robot).xacro" />
 
         <!-- Gazebo -->
-        <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+        <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false"
+            output="screen"
             args="-urdf -x $(arg robot_x) -y $(arg robot_y) -z $(arg robot_z) -Y $(arg robot_yaw) -model $(arg robot_namespace) -param robot_description" />
 
         <!-- Transform from map to odom -->
@@ -70,12 +74,16 @@
 
     <!-- single  -->
     <group unless="$(arg start_ns)">
-        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen" />
-        <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher" output="screen" />
-        <param name="robot_description" command="$(find xacro)/xacro --inorder $(find sim_env)/urdf/$(arg robot)/$(arg robot).xacro" />
+        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher"
+            output="screen" />
+        <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher"
+            output="screen" />
+        <param name="robot_description"
+            command="$(find xacro)/xacro  $(find sim_env)/urdf/$(arg robot)/$(arg robot).xacro" />
 
         <!-- Gazebo -->
-        <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+        <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false"
+            output="screen"
             args="-urdf -x $(arg robot_x) -y $(arg robot_y) -z $(arg robot_z) -Y $(arg robot_yaw) -model $(arg robot) -param robot_description" />
 
         <!-- AMCL -->
