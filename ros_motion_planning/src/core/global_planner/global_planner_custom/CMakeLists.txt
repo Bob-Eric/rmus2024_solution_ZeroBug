@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(global_planner)
+project(global_planner_custom)
 
 find_package(catkin REQUIRED COMPONENTS
   angles
@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_package(
  INCLUDE_DIRS include
- LIBRARIES global_planner
+ LIBRARIES global_planner_custom
  CATKIN_DEPENDS utils
 )
 

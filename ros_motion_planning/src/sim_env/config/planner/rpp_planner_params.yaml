@@ -13,7 +13,7 @@ RPPPlanner:
 
   # angular velocity
   max_w: 0.5
-  min_w: 0.05
+  min_w: 0.01
   max_w_inc: 1.57
 
   # frame id
@@ -22,8 +22,8 @@ RPPPlanner:
 
   # lookahead
   lookahead_time: 1.5
-  min_lookahead_dist: 0.3
-  max_lookahead_dist: 0.9
+  min_lookahead_dist: 0.15
+  max_lookahead_dist: 0.5
 
   # constriants
   regulated_min_radius: 0.9

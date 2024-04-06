@@ -6,7 +6,11 @@ global_costmap:
   publish_frequency: 1.0
   transform_tolerance: 0.5
 
-  inflation_radius: 0.2
+  inflation_radius: 0.4
+
+  keep_out_layer:
+    enabled: true
+    fill_zones: true
 
   ### Sensor management parameters ###
   obstacle_layer:
