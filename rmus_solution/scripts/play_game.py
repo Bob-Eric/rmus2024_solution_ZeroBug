@@ -20,9 +20,9 @@ class gamecore:
 
         rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
-        self.aligner = rospy.ServiceProxy("/let_manipulator_work", graspsignal)
-        self.img_switch_mode = rospy.ServiceProxy( "/image_processor_switch_mode", switch)
-        self.ctl_switch_mode = rospy.ServiceProxy("/manipulator_config", graspconfig)
+        self.aligner = rospy.ServiceProxy("/manipulator/grasp", graspsignal)
+        self.img_switch_mode = rospy.ServiceProxy( "/img_processor/mode", switch)
+        self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
         """ gamecore state params: """
         self.observing = True  ## if self.observing == True, classify the block to mining areas
         """ gamecore record data (global): """
@@ -33,7 +33,7 @@ class gamecore:
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
         ## switch to PID control (no angle alignment)
-        self.ctl_switch_mode(2, 0)
+        self.swtch_align_mode(2, 0)
         """ start gamecore logic """
         self.navigation(PointName.Home, "")
         self.aligner(AlignRequest.Reset, 0, 0)
@@ -45,23 +45,24 @@ class gamecore:
         ######### for test #########
         def test_grasp_block(block_id, slot, layer):
             print(f"go get block {block_id} open loop")
-            self.ctl_switch_mode(0, 0)
+            self.swtch_align_mode(0, 0)
             self.go_get_block(block_id)
-            self.aligner(AlignRequest.PlaceFake, 0, 0)
+            self.aligner(AlignRequest.Drop, 0, 0)
             rospy.sleep(2)
 
             print(f"go get block {block_id} state space")
-            self.ctl_switch_mode(1, 0)
+            self.swtch_align_mode(1, 0)
             self.go_get_block(block_id)
-            self.aligner(AlignRequest.PlaceFake, 0, 0)
+            self.aligner(AlignRequest.Drop, 0, 0)
             rospy.sleep(2)
 
             print(f"go get block {block_id} PID")
-            self.ctl_switch_mode(2, 0)
+            self.swtch_align_mode(2, 0)
             self.go_get_block(block_id)
             rospy.sleep(2)
 
-            print(f"stack {block_id}")
+            print(f"stack {block_id} with open-loop alignment")
+            self.swtch_align_mode(0, 0)
             self.stack(block_id, slot, layer)
 
         test_grasp_block(1, 7, 1)
@@ -85,20 +86,18 @@ class gamecore:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_service("/let_manipulator_work", 1.0)
+                rospy.wait_for_service("/manipulator/grasp", 1.0)
                 break
             except:
-                rospy.logwarn("Waiting for let_manipulator_work Service")
+                rospy.logwarn("Waiting for /manipulator/grasp Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_service("/image_processor_switch_mode", 1.0)
+                rospy.wait_for_service("/img_processor/mode", 1.0)
                 break
             except:
-                rospy.logwarn(
-                    "Waiting for image_processor_switch_mode Service"
-                )
+                rospy.logwarn( "Waiting for /img_processor/mode Service")
                 rospy.sleep(0.5)
 
     def update_gameinfo(self, gameinfo: UInt8MultiArray):
