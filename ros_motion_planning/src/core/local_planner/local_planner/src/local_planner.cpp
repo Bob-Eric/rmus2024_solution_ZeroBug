@@ -18,6 +18,9 @@
 
 #include "local_planner.h"
 
+#include "backward.hpp"
+backward::SignalHandling sh;
+
 namespace local_planner {
   /**
    * @brief Construct a new Local Planner object
@@ -282,6 +285,13 @@ namespace local_planner {
   void LocalPlanner::getLookAheadPoint(double lookahead_dist, geometry_msgs::PoseStamped robot_pose_global,
     const std::vector<geometry_msgs::PoseStamped>& prune_plan,
     geometry_msgs::PointStamped& pt, double& theta, double& kappa) {
+
+    // Assert that the global plan path has more then 3 points
+    if (prune_plan.size() < 2) {
+      ROS_ERROR("The global plan is too short");
+      return;
+    }
+
     double rx = robot_pose_global.pose.position.x;
     double ry = robot_pose_global.pose.position.y;
 
@@ -292,8 +302,21 @@ namespace local_planner {
 
     std::vector<geometry_msgs::PoseStamped>::const_iterator prev_pose_it;
     std::vector<geometry_msgs::PoseStamped>::const_iterator pprev_pose_it;
+
+    // If the first pose is far enough, take the first 3 poses
+    if (goal_pose_it == prune_plan.begin()) {
+      ROS_WARN("The lookahead distance is too small");
+      // pprev_pose_it = prune_plan.begin();
+      prev_pose_it = prune_plan.begin();
+      goal_pose_it = std::next(prev_pose_it);
+
+      pt.point.x = goal_pose_it->pose.position.x;
+      pt.point.y = goal_pose_it->pose.position.y;
+      kappa = 0;
+    }
+
     // If the no pose is not far enough, take the last pose
-    if (goal_pose_it == prune_plan.end()) {
+    else if (goal_pose_it == prune_plan.end()) {
       goal_pose_it = std::prev(prune_plan.end());
       prev_pose_it = std::prev(goal_pose_it);
       pprev_pose_it = std::prev(prev_pose_it);
@@ -307,6 +330,8 @@ namespace local_planner {
       // This can be found with a closed form for the intersection of a segment and a circle
       // Because of the way we did the std::find_if, prev_pose is guaranteed to be inside the circle,
       // and goal_pose is guaranteed to be outside the circle.
+
+
       prev_pose_it = std::prev(goal_pose_it);
       pprev_pose_it = std::prev(prev_pose_it);
 
@@ -321,10 +346,17 @@ namespace local_planner {
 
 
       std::vector<std::pair<double, double>> i_points;
-      while (i_points.size() == 0 && lookahead_dist > 0.0) {
-        i_points = helper::circleSegmentIntersection(prev_p, goal_p, lookahead_dist);
-        lookahead_dist += 0.025;
-      }
+      i_points = helper::circleSegmentIntersection(prev_p, goal_p, lookahead_dist);
+      // const double look_ahead_dist_max = 1.5;
+      // const double increase_lookahead_dist = 0.025;
+
+      // while (i_points.size() == 0 && lookahead_dist < look_ahead_dist_max) {
+      //   lookahead_dist += increase_lookahead_dist;
+      //   ROS_WARN("No intersection found, adding lookahead distance to %.3f", lookahead_dist);
+      //   ROS_INFO("Prev_x: %.2f, Prev_y: %.2f, Goal_x: %.2f, Goal_y: %.2f, Lookahead distance: %.2f", prev_p.first, prev_p.second,
+      //     goal_p.first, goal_p.second, lookahead_dist);
+      //   i_points = helper::circleSegmentIntersection(prev_p, goal_p, lookahead_dist);
+      // }
 
 
       pt.point.x = i_points[0].first + rx;

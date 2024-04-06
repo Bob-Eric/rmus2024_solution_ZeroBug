@@ -4,12 +4,27 @@
 import rospy
 from math import pi
 from actionlib_msgs.msg import GoalID
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PoseStamped, PointStamped
 from move_base_msgs.msg import MoveBaseActionResult
 from rmus_solution.srv import setgoal, setgoalResponse, setgoalRequest
+from rmus_solution.srv import keepoutmode, keepoutmodeResponse, keepoutmodeRequest
+from keep_out_layer.srv import keepOutZone, keepOutZoneRequest, keepOutZoneResponse
 import tf2_ros
 from tf_conversions import transformations
 from enum import IntEnum
+
+
+class KeepOutMode(IntEnum):
+    AddAll = 0
+    RemoveAll = 1
+    AddByArea = 2
+    RemoveByArea = 3
+
+
+class KeepOutArea(IntEnum):
+    MiningArea_0 = 0
+    MiningArea_1 = 1
+    MiningArea_2 = 2
 
 
 class PointName(IntEnum):
@@ -59,6 +74,7 @@ class router:
 
     def __init__(self) -> None:
         self.M_reach_goal = False
+        self.getKeepOutAreaPoints()
 
         # 所有观察点的索引、名称、位置(posi_x,pose_y,yaw)
 
@@ -88,12 +104,114 @@ class router:
         )
 
         self.mission = PointName.End
-        
+
         rospy.sleep(2.0)
-        
-        self.service = rospy.Service(
+
+        self.__set_goal_service = rospy.Service(
             "/set_navigation_goal", setgoal, self.setgoalCallback
         )
+        self.__keep_out_mode_service = rospy.Service(
+            "/keep_out_mode", keepoutmode, self.keepoutmodeCallback
+        )
+        self.__xju_service = rospy.ServiceProxy(
+            "/move_base/global_costmap/keep_out_layer/xju_zone", keepOutZone
+        )
+
+    def getKeepOutAreaPoints(self):
+        mining_area_center = [(-0.15, 0.8), (0.7, 3.4), (2.55, -0.1)]
+
+        def getPoints(center: "tuple[float,float]", size: float):
+            points: list[PointStamped] = []
+            for i in range(2):
+                for j in range(2):
+                    x = center[0] + size * (i - 0.5)
+                    y = center[1] + size * (j - 0.5)
+                    poseStamped = PointStamped()
+                    poseStamped.header.frame_id = "map"
+                    poseStamped.point.x = x
+                    poseStamped.point.y = y
+
+                    points.append(poseStamped)
+            # Swap points[2] and points[3]
+            pnt_tmp = points[2]
+            points[2] = points[3]
+            points[3] = pnt_tmp
+            return points
+
+        size = 0.35
+
+        self.KeepOutPoints = {
+            KeepOutArea.MiningArea_0: {
+                "pose": getPoints(mining_area_center[0], size),
+                "id": None,
+            },
+            KeepOutArea.MiningArea_1: {
+                "pose": getPoints(mining_area_center[1], size),
+                "id": None,
+            },
+            KeepOutArea.MiningArea_2: {
+                "pose": getPoints(mining_area_center[2], size),
+                "id": None,
+            },
+        }
+        return self.KeepOutPoints
+
+    def keepoutmodeCallback(self, req: keepoutmodeRequest):
+        mode = req.mode
+        area = KeepOutArea(req.area)
+        cost = 0
+        resp = keepoutmodeResponse()
+
+        if mode == KeepOutMode.AddAll:
+            for area in self.KeepOutPoints:
+                if self.KeepOutPoints[area]["id"] is None:
+                    xju_resp: keepOutZoneResponse = self.__xju_service(
+                        0, cost, self.KeepOutPoints[area]["pose"], 0
+                    )
+                    self.KeepOutPoints[area]["id"] = xju_resp.id
+                else:
+                    rospy.loginfo("KeepOutArea_{} already exists!".format(area))
+            message = "Add All KeepOutArea!"
+            resp.success = True
+            resp.message = message
+            rospy.loginfo(message)
+        elif mode == KeepOutMode.RemoveAll:
+            self.__xju_service(2, cost, [], 0)
+            message = "Delete All KeepOutArea!"
+            resp.success = True
+            resp.message = message
+            rospy.loginfo(message)
+            self.KeepOutPoints[KeepOutArea.MiningArea_0]["id"] = None
+            self.KeepOutPoints[KeepOutArea.MiningArea_1]["id"] = None
+            self.KeepOutPoints[KeepOutArea.MiningArea_2]["id"] = None
+
+        elif mode == KeepOutMode.AddByArea:
+            if self.KeepOutPoints[area]["id"] is None:
+                xju_resp: keepOutZoneResponse = self.__xju_service(
+                    0, cost, self.KeepOutPoints[area]["pose"], 0
+                )
+                self.KeepOutPoints[area]["id"] = xju_resp.id
+            else:
+                rospy.loginfo("KeepOutArea_{} already exists!".format(area))
+            resp.success = True
+            message = "Add KeepOutArea_{}!".format(area)
+            resp.message = message
+            rospy.loginfo(message)
+        elif mode == KeepOutMode.RemoveByArea:
+            if self.KeepOutPoints[area]["id"] is not None:
+                self.__xju_service(1, cost, [], self.KeepOutPoints[area]["id"])
+                self.KeepOutPoints[area]["id"] = None
+            else:
+                rospy.loginfo("KeepOutArea_{} does not exist!".format(area))
+            message = "Delete KeepOutArea_{}!".format(area)
+            resp.success = True
+            resp.message = message
+            rospy.loginfo(message)
+        else:
+            rospy.loginfo("Invalid mode!")
+            resp.success = False
+
+        return resp
 
     def MoveBaseResultCallback(self, msg: MoveBaseActionResult):
         if msg.status.status == 3:
@@ -129,9 +247,7 @@ class router:
             r = rospy.Rate(10)
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
-                    rospy.loginfo(
-                        "Reach Goal {}!".format(self.Points[self.mission][0])
-                    )
+                    rospy.loginfo("Reach Goal {}!".format(self.Points[self.mission][0]))
                     resp.res = True
                     resp.response = "Accomplish!"
                     self.mission = PointName.End

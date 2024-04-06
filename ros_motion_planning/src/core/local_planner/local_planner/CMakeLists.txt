@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(local_planner)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 find_package(catkin REQUIRED COMPONENTS
   angles
   roscpp
@@ -24,7 +26,11 @@ include_directories(
 add_library(${PROJECT_NAME}
   src/local_planner.cpp
 )
+add_subdirectory(backward-cpp)
+
 
 target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+  Backward::Interface
   ${catkin_LIBRARIES}
 )

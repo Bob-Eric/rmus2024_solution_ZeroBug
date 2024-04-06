@@ -12,7 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   pluginlib
   tf2_geometry_msgs
   tf2_ros
-  global_planner
+  global_planner_custom
   voronoi_layer
   utils
   curve_generation
@@ -20,7 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_package(
  INCLUDE_DIRS include
- CATKIN_DEPENDS global_planner voronoi_layer utils curve_generation
+ CATKIN_DEPENDS global_planner_custom voronoi_layer utils curve_generation
 )
 
 include_directories(

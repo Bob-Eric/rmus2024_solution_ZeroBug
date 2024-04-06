@@ -1,0 +1,5 @@
+uint8 mode # 0: add by area, 1: delete by area, 2: delete all
+uint8 area # 0: Mining_Area_0, 1: Mining_Area_1, 2: Mining_Area_2
+---
+bool success
+string message
