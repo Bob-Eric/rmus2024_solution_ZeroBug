@@ -15,10 +15,10 @@ from enum import IntEnum
 
 
 class KeepOutMode(IntEnum):
-    AddByArea = 0
-    DeleteByArea = 1
-    AddAll = 2
-    DeleteAll = 3
+    AddAll = 0
+    RemoveAll = 1
+    AddByArea = 2
+    RemoveByArea = 3
 
 
 class KeepOutArea(IntEnum):
@@ -118,7 +118,7 @@ class router:
         )
 
     def getKeepOutAreaPoints(self):
-        mining_area_center = [(-0.15, 1.15), (0.7, 3.4), (2.55, -0.1)]
+        mining_area_center = [(-0.15, 0.8), (0.7, 3.4), (2.55, -0.1)]
 
         def getPoints(center: "tuple[float,float]", size: float):
             points: list[PointStamped] = []
@@ -177,13 +177,13 @@ class router:
             resp.success = True
             resp.message = message
             rospy.loginfo(message)
-        elif mode == KeepOutMode.DeleteByArea:
+        elif mode == KeepOutMode.RemoveByArea:
             self.__xju_service(1, cost, [], self.KeepOutPoints[area]["id"])
             message = "Delete KeepOutArea_{}!".format(area)
             resp.success = True
             resp.message = message
             rospy.loginfo(message)
-        elif mode == KeepOutMode.DeleteAll:
+        elif mode == KeepOutMode.RemoveAll:
             self.__xju_service(2, cost, [], 0)
             message = "Delete All KeepOutArea!"
             resp.success = True

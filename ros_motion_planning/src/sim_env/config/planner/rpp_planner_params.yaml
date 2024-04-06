@@ -13,7 +13,7 @@ RPPPlanner:
 
   # angular velocity
   max_w: 0.5
-  min_w: 0.05
+  min_w: 0.01
   max_w_inc: 1.57
 
   # frame id

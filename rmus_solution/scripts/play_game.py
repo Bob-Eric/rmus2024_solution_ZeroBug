@@ -3,13 +3,14 @@
 
 import rospy
 from std_msgs.msg import UInt8MultiArray
-from rmus_solution.srv import switch, setgoal, graspsignal, graspsignalResponse, graspconfig, graspconfigResponse
+from rmus_solution.srv import switch, setgoal, graspsignal, graspconfig, keepoutmode
 from navi_control import PointName, router
 from img_processor import ModeRequese
 from manipulator import AlignRequest
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
 from geometry_msgs.msg import Point, PoseArray
 import math
+from navi_control import KeepOutMode, KeepOutArea
 
 
 class gamecore:
@@ -21,14 +22,21 @@ class gamecore:
         rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
         self.aligner = rospy.ServiceProxy("/let_manipulater_work", graspsignal)
-        self.img_switch_mode = rospy.ServiceProxy( "/image_processor_switch_mode", switch)
+        self.img_switch_mode = rospy.ServiceProxy(
+            "/image_processor_switch_mode", switch
+        )
         self.ctl_switch_mode = rospy.ServiceProxy("/manipulater_config", graspconfig)
+        self.keep_out_mode = rospy.ServiceProxy("/keep_out_mode", keepoutmode)
         """ gamecore state params: """
-        self.observing = True  ## if self.observing == True, classify the block to mining areas
+        self.observing = (
+            True  ## if self.observing == True, classify the block to mining areas
+        )
         """ gamecore record data (global): """
         self.gameinfo = None
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
-        self.blockinfo_dict = {} ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
+        self.blockinfo_dict = (
+            {}
+        )  ## {block_id: MarkerInfo}, stores latest block info (maybe incomplete if never detected by img_processor)
         ## subscribe to gameinfo and blockinfo
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
@@ -42,6 +50,7 @@ class gamecore:
         """ gamecore logic: """
         self.img_switch_mode(ModeRequese.BlockInfo)
         self.observation()
+
         ######### for test #########
         def test_grasp_block(block_id, slot, layer):
             print(f"go get block {block_id} open loop")
@@ -96,9 +105,7 @@ class gamecore:
                 rospy.wait_for_service("/image_processor_switch_mode", 1.0)
                 break
             except:
-                rospy.logwarn(
-                    "Waiting for image_processor_switch_mode Service"
-                )
+                rospy.logwarn("Waiting for image_processor_switch_mode Service")
                 rospy.sleep(0.5)
 
     def update_gameinfo(self, gameinfo: UInt8MultiArray):
@@ -106,19 +113,28 @@ class gamecore:
             self.gameinfo = gameinfo
 
     def observation(self):
+        self.keep_out_mode(KeepOutMode.AddAll, 0)
         print("----------observing----------")
         self.img_switch_mode(ModeRequese.BlockInfo)
-        self.navigation(PointName.MiningArea_0_Vp_1, ""); rospy.sleep(2)
-        self.navigation(PointName.MiningArea_0_Vp_2, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_0_Vp_1, "")
+        rospy.sleep(2)
+        self.navigation(PointName.MiningArea_0_Vp_2, "")
+        rospy.sleep(2)
         self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation(PointName.Noticeboard_2, ""); rospy.sleep(2)
+        self.navigation(PointName.Noticeboard_2, "")
+        rospy.sleep(2)
         self.img_switch_mode(ModeRequese.BlockInfo)
-        self.navigation(PointName.MiningArea_1_Vp_1, ""); rospy.sleep(2)
-        self.navigation(PointName.MiningArea_1_Vp_2, ""); rospy.sleep(2)
-        self.navigation(PointName.MiningArea_2_Vp_1, ""); rospy.sleep(2)
-        self.navigation(PointName.MiningArea_2_Vp_2, ""); rospy.sleep(2)
+        self.navigation(PointName.MiningArea_1_Vp_1, "")
+        rospy.sleep(2)
+        self.navigation(PointName.MiningArea_1_Vp_2, "")
+        rospy.sleep(2)
+        self.navigation(PointName.MiningArea_2_Vp_1, "")
+        rospy.sleep(2)
+        self.navigation(PointName.MiningArea_2_Vp_2, "")
+        rospy.sleep(2)
         self.observing = False
         print("----------done observing----------")
+        self.keep_out_mode(KeepOutMode.RemoveAll, 0)
 
     def update_blockinfo(self, blockinfo_list: MarkerInfoList):
         for blockinfo in blockinfo_list.markerInfoList:
@@ -161,7 +177,7 @@ class gamecore:
             PointName.MiningArea_2_Vp_1,
             PointName.MiningArea_2_Vp_2,
         ]
-        dest = navi_areas[2*area_idx]
+        dest = navi_areas[2 * area_idx]
         print(f"fetching block {block_id} from area No.{area_idx}")
         self.img_switch_mode(ModeRequese.GameInfo)
         if not self.blockinfo_dict[block_id].in_cam:
@@ -170,8 +186,8 @@ class gamecore:
             rospy.sleep(0.5)
         if not self.blockinfo_dict[block_id].in_cam:
             print(f"block {block_id} not found in spot1, go to spot2...")
-            dest = navi_areas[2*area_idx + 1]
-            self.navigation(dest, "") 
+            dest = navi_areas[2 * area_idx + 1]
+            self.navigation(dest, "")
             rospy.sleep(0.5)
         self.aligner(AlignRequest.Grasp, block_id, 0)
         return True
@@ -184,7 +200,10 @@ class gamecore:
 
     def get_layer(self, block_id: int):
         """calc given block's layer, assuming block is in exchange spot"""
-        if (block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam):
+        if (
+            block_id not in self.blockinfo_dict
+            or not self.blockinfo_dict[block_id].in_cam
+        ):
             return -1
         block_info = self.blockinfo_dict[block_id]
         ## block in layer 1 is at height of height_base
@@ -197,9 +216,15 @@ class gamecore:
     def get_hbias(self, block_id: int, slot: int):
         """calc horizontal bias of given block to given slot,
         return math.inf if block or slot not in sight"""
-        if (block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam):
+        if (
+            block_id not in self.blockinfo_dict
+            or not self.blockinfo_dict[block_id].in_cam
+        ):
             return math.inf
-        if (block_id not in self.blockinfo_dict or not self.blockinfo_dict[block_id].in_cam):
+        if (
+            block_id not in self.blockinfo_dict
+            or not self.blockinfo_dict[block_id].in_cam
+        ):
             return math.inf
         ## x, y, z axis of "map frame" point forwards, left and upwards respectively
         block_info = self.blockinfo_dict[block_id]
