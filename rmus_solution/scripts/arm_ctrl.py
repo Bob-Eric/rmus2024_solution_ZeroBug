@@ -19,7 +19,6 @@ class AlignMode(IntEnum):
 
 
 class arm_action:
-
     def __init__(self):
         self.__gripper_pub = rospy.Publisher("arm_gripper", Point, queue_size=10)
         self.__position_pub = rospy.Publisher("arm_position", Pose, queue_size=10)
@@ -27,49 +26,34 @@ class arm_action:
         self.__cmd_vel_sub = rospy.Subscriber(
             "/cmd_vel", Twist, self.__cmd_vel_callback
         )
-        self.__gripper_state_sub = rospy.Subscriber(
-            "/gripper_state", Point, self.__gripper_state_callback
-        )
+        """ state params """
         self.movement_start_time = 0.0
         self.movement_end_time = 0.0
         self.movement_active_time = 0.0
+        self.align_mode = AlignMode.OpenLoop
         self.__vel_old = [0.0, 0.0, 0.0]
         self.__can_arm_grasp_old = False
+        """ config params """
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
         self.min_vel = 0.0
         self.min_angular_vel = 0.0
-        self.align_mode = AlignMode.OpenLoop
 
     def __cmd_vel_callback(self, msg: Twist):
-        vel = [msg.linear.x, msg.linear.y, msg.angular.z]
-        self.__vel = vel
-
+        self.__vel = [msg.linear.x, msg.linear.y, msg.angular.z]
+        v0 = np.linalg.norm(self.__vel_old[0:2])
+        v1 = np.linalg.norm(self.__vel[0:2])
         # only checks for the movement in the x-y plane
-        if (
-            np.linalg.norm(vel[0:2]) >= 0.2
-            and np.linalg.norm(self.__vel_old[0:2]) < 0.2
-        ):
+        if v0 < 0.2 and v1 >= 0.2:
             # get the time when the movement is active
             self.movement_active_time = rospy.get_time()
-        if (
-            np.linalg.norm(vel[0:2]) < 0.1
-            and np.linalg.norm(self.__vel_old[0:2]) >= 0.1
-        ):
+        if v0 < 0.1 and v1 >= 0.1:
             # get the time when the movement ends
             self.movement_end_time = rospy.get_time()
-        if (
-            np.linalg.norm(vel[0:2]) >= 0.1
-            and np.linalg.norm(self.__vel_old[0:2]) < 0.1
-        ):
+        if v0 >= 0.1 and v1 < 0.1:
             # get the time when the movement starts
             self.movement_start_time = rospy.get_time()
-
-        self.__vel_old = vel
-
-    def __gripper_state_callback(self, msg: Point):
-        # 1 for grasped something, 0 for not
-        self.__gripper_state = msg.x
+        self.__vel_old = self.__vel
 
     def can_arm_grasp_sometime(
         self, target_in_arm_base: list, timeout: float, align_mode: AlignMode
@@ -105,17 +89,14 @@ class arm_action:
         else:
             return False
 
-    def has_grasped(self) -> bool:
-        return self.__gripper_state == 1
-
     def is_vel_active(self):
         return np.linalg.norm(self.__vel[0:2]) >= 0.2
 
     def send_cmd_vel(self, vel: list):
-        vel[0] = max(self.min_vel, min(self.max_vel, fabs(vel[0]))) * np.sign(vel[0])
-        vel[1] = max(self.min_vel, min(self.max_vel, fabs(vel[1]))) * np.sign(vel[1])
-        vel[2] = max(
-            self.min_angular_vel, min(self.max_angular_vel, fabs(vel[2]))
+        vel[0] = np.clip(fabs(vel[0]), self.min_vel, self.max_vel) * np.sign(vel[0])
+        vel[1] = np.clip(fabs(vel[1]), self.min_vel, self.max_vel) * np.sign(vel[1])
+        vel[2] = np.clip(
+            fabs(vel[2]), self.min_angular_vel, self.max_angular_vel
         ) * np.sign(vel[2])
 
         twist = Twist()
@@ -163,10 +144,10 @@ class arm_action:
         self.set_arm(0.1, 0.12)
         rospy.loginfo("reset the arm")
 
-    def set_arm(self, x:float, y:float):
-        """ 
+    def set_arm(self, x: float, y: float):
+        """
         a low level api to set arm position to (x, y) directly, unit: meter;
-        axes of x, y point forwards and upwards respectively, 
+        axes of x, y point forwards and upwards respectively,
             i.e. horizontal extension and vertical height
         e.g. typical value of (extension, height)
             reset:  (0.1, 0.12);
@@ -188,101 +169,87 @@ class arm_action:
         height = -0.04 + 0.055 * (place_layer - 1)
         self.set_arm(extension, height)
 
-    def grasp_pos(self, target_in_arm_base: list):
-        # limit the grasp position 0.09 <= x <= 0.22, -0.08 <= y
-        extension = max(min(target_in_arm_base[0], 0.22), 0.09)
+    def grasp(self, target_in_arm_base: list):
+        # print(f"-------------------- {target_in_arm_base} --------------------")
+        extension = np.clip(target_in_arm_base[0], 0.09, 0.22)
         height = max(target_in_arm_base[2], -0.08)
-        rospy.loginfo(f"moving to grasp position: ({extension}, {height})")
         self.set_arm(extension, height)
-
-    def grasp_cube(self):
-        self.close_gripper()
-        rospy.sleep(1)
-        self.reset_pos()
-        rospy.sleep(1)
-
-    def go_and_grasp(self, target_in_arm_base: list, align_mode: AlignMode):
-        print(f"-------------------- {target_in_arm_base} --------------------")
-        if align_mode == AlignMode.OpenLoop:
-            self.send_cmd_vel([0.25, 0.0, 0.0])
-            rospy.sleep(0.3)
-            self.send_cmd_vel([0.0, 0.0, 0.0])
-            self.grasp_pos([0.19, 0.0, -0.08])
-        else:
-            self.send_cmd_vel([0.0, 0.0, 0.0])
-            self.grasp_pos(target_in_arm_base)
-
+        print(f"Grasp: move to ({extension:.2f}, {height:.2f})m")
         rospy.sleep(1.5)
-        rospy.loginfo("Place: reach the goal for placing.")
-
-        ## TODO: find out why example project do close_gripper() twice
-        for _ in range(2):
-            self.close_gripper()
-            rospy.sleep(0.25)
+        self.close_gripper()
+        rospy.sleep(1.5)
         self.reset_pos()
-
+        ## move backwards a little bit
         self.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
         self.send_cmd_vel([0.0, 0.0, 0.0])
+        rospy.sleep(0.5)
 
-    def go_and_place(self):
-        if self.align_mode == AlignMode.OpenLoop:
-            self.send_cmd_vel([0.25, 0.0, 0.0])
-            rospy.sleep(0.3)
-
+    def place(self):
         self.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(1.0)
-        rospy.loginfo("Place: reach the goal for placing.")
-
+        # print("Place: reach the goal for placing.")
         self.open_gripper()
         rospy.sleep(2.0)
-
+        ## move backwards a little bit
         self.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
         self.reset_pos()
         self.send_cmd_vel([0.0, 0.0, 0.0])
+        rospy.sleep(0.5)
 
     def preparation_for_grasp(self):
+        """takes ~3 seconds to brake and open gripper"""
         rospy.loginfo("First align then grasp")
         rospy.loginfo("align to the right place")
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
+        self.reset_pos()
         self.open_gripper()
         rospy.sleep(2.0)
 
     def preparation_for_place(self, place_layer: int):
+        """ takes ~3 seconds to brake and elevate gripper """
+        rospy.loginfo("First align then place")
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
-        rospy.loginfo("First align then place")
         self.place_pos(place_layer)
         rospy.sleep(2.0)
-        rospy.loginfo("adjusting arm pose for place.")
+        rospy.loginfo(f"elevate gripper to layer {place_layer}")
 
 
 class align_action:
     def __init__(self, arm_act: arm_action):
+        """object reference"""
         self.__arm_action = arm_act
-        self.__base_link_pos_old = [0.0, 0.0]
-        self.__delta_pos = 0.0
         self.tfBuffer = tf2_ros.Buffer()
         tf2_ros.TransformListener(self.tfBuffer)
         self.__base_link_pos_timer = rospy.Timer(
             rospy.Duration(2.5), self.__base_link_pos_callback
         )
+        """ state params """
+        self.align_mode = AlignMode.OpenLoop
+        self.__base_link_pos_old = [0.0, 0.0]
+        self.__delta_pos = 0.0
+        self.__is_near_target_state_old = False
+        self.x_sp = None  ## state, set point
+        self.x_mv = None  ## state, measured variable
+        """ config params """
         self.pid_cfg: dict[str, Union[float, PID]] = {
             "Ki": 0.0,
             "sep_dist": 0.0,
             "xctl": PID(),
             "yctl": PID(),
         }  ## Ki is for sep_dist
+        self.open_cfg = {
+            "v1": 0.5,
+            "v2": 0.25,
+            "offset_x": 0.1,
+            "t_swtch": 1,
+        }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
         self.ss_cfg = {"decay": 3, "decay_near": 9, "dist_thresh": 0.1}
-        self.__decay = 3
-        self.__decay_near = 9
-        self.__decay_seperate_dist = 0.1
-        self.__is_near_target_state_old = False
         self.align_angle = False
-        self.align_mode = AlignMode.OpenLoop
 
     def __base_link_pos_callback(self, timer_event):
         base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
@@ -312,13 +279,12 @@ class align_action:
         self.pid_cfg["yctl"].sample_time = sample_time
 
     def set_decay(self, decay: float):
-        self.__decay = decay
+        self.ss_cfg["decay"] = decay
 
     def __cal_pid_vel(self, measured_pos: list):
         if (
-            np.linalg.norm(
-                np.array(measured_pos[0:2]) - np.array(self.__target_state[0:2])
-            ) > self.pid_cfg["sep_dist"]
+            np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.x_sp[0:2]))
+            > self.pid_cfg["sep_dist"]
         ):
             self.pid_cfg["xctl"].Ki = 0
             self.pid_cfg["yctl"].Ki = 0
@@ -336,67 +302,92 @@ class align_action:
         self.align_mode = align_mode
         self.__arm_action.align_mode = align_mode
 
-    # x y theta
-    def set_target_state(self, target_state: list):
-        self.__target_state = target_state
-
-        if self.align_mode == AlignMode.PID:
-            self.pid_cfg["xctl"].setpoint = self.__target_state[0]
-            self.pid_cfg["yctl"].setpoint = self.__target_state[1]
-            self.pid_cfg["xctl"].reset()
-            self.pid_cfg["yctl"].reset()
-        elif self.align_mode == AlignMode.OpenLoop:
-            self.__target_state[0] = 0.385
-            self.__target_state[1] = 0.0
-            self.pid_cfg["xctl"].setpoint = self.__target_state[0]
-            self.pid_cfg["yctl"].setpoint = self.__target_state[1]
-            self.pid_cfg["xctl"].reset()
-            self.pid_cfg["yctl"].reset()
-
-    def set_measured_state(self, measured_state: list):
-        self.__measured_state = measured_state
-
     def __cal_custom_vel(self, measured_pos: list):
         x = measured_pos[0]
         y = measured_pos[1]
-        error = np.array(measured_pos) - np.array(self.__target_state)
+        error = np.array(measured_pos) - np.array(self.x_sp)
 
         decay = 0
-        if np.linalg.norm(error[0:2]) > self.__decay_seperate_dist:
-            decay = self.__decay
+        if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
+            decay = self.ss_cfg["decay"]
         else:
-            decay = self.__decay_near
+            decay = self.ss_cfg["decay_near"]
 
         vel_ang = decay * error[2] if self.align_angle else 0.0
         vel_x = decay * error[0] + y * vel_ang
         vel_y = decay * error[1] - x * vel_ang
         return [vel_x, vel_y, vel_ang]
 
+    def init_ctrl(self):
+        """init all controllers for align_action afterwards"""
+        ## init pid controller (integral, ...)
+        self.pid_cfg["xctl"].reset()
+        self.pid_cfg["yctl"].reset()
+        ## init state space controller (nothing to do here)
+        pass
+        ## init open loop controller ()
+        self.t1_open = None
+        self.t2_open = None
+        return
+
+    def set_state_sp(self, x_sp):
+        """set target state (setpoint) of arm_ctrl"""
+        self.x_sp = np.array(x_sp)
+        if self.align_mode == AlignMode.PID:
+            self.pid_cfg["xctl"].setpoint = self.x_sp[0]
+            self.pid_cfg["yctl"].setpoint = self.x_sp[1]
+        return
+
+    def set_state_mv(self, x_mv):
+        """set measure variable of arm_ctrl"""
+        self.x_mv = np.array(x_mv)
+
     def align(self):
+        """
+        send cmd_vel by comparing x_mv and x_sp to align. i.e. the controller
+        should be called at certain rate (e.g. 30Hz)
+        """
+        ########## for debug ##########
+        err = np.array(self.x_mv) - np.array(self.x_sp)
+        print(f"==> ctrl err: {100*err[0]:.1f}cm, {100*err[1]:.1f}cm, {np.rad2deg(err[2]):.1f}degree")
+        ###############################
         vel = [0.0, 0.0, 0.0]
-        if self.align_mode == AlignMode.PID or self.align_mode == AlignMode.OpenLoop:
-            vel = self.__cal_pid_vel(self.__measured_state)
+        if self.align_mode == AlignMode.PID:
+            vel = self.__cal_pid_vel(self.x_mv)
         elif self.align_mode == AlignMode.StateSpace:
-            vel = self.__cal_custom_vel(self.__measured_state)
+            vel = self.__cal_custom_vel(self.x_mv)
+        elif self.align_mode == AlignMode.OpenLoop:
+            t = rospy.get_time()
+            if self.t1_open == None:
+                x, y = self.x_mv[:2] - self.x_sp[:2]
+                x -= self.open_cfg["offset_x"]
+                T1 = np.linalg.norm([x, y]) / self.open_cfg["v1"]
+                self.t1_open = t + T1
+                self.v1_open = [x / T1, y / T1, 0.0]
+                print(f"open loop: PHASE1; vel: ({x/T1:.2f}, {y/T1:.2f})m/s")
+            elif t < self.t1_open:
+                vel = self.v1_open.copy()
+            elif t < self.t1_open + self.open_cfg["t_swtch"]:
+                ## brake to make better observation
+                vel = [0.0, 0.0, 0.0]
+            elif self.t2_open == None:
+                x, y = self.x_mv[:2] - self.x_sp[:2]
+                T2 = np.linalg.norm([x, y]) / self.open_cfg["v2"]
+                self.t2_open = t + T2
+                self.v2_open = [x / T2, y / T2, 0.0]
+                print(f"open loop: PHASE2; vel: ({x/T2:.2f}, {y/T2:.2f})m/s")
+            elif t < self.t2_open:
+                vel = self.v2_open.copy()
         self.__arm_action.send_cmd_vel(vel)
 
-        # only check if robot is saturating for 2.5s
-        if (
-            self.__arm_action.is_vel_active()
-            and rospy.get_time() - self.__arm_action.movement_active_time > 2.5
-        ):
-            if self.__delta_pos < 0.05:
-                # robot is stuck
-                rospy.logwarn("robot is stuck")
-                reverse_vel_x = -np.sign(vel[0]) * 0.3
-                reverse_vel_y = -np.sign(vel[1]) * 0.3
-                self.__arm_action.send_cmd_vel([reverse_vel_x, reverse_vel_y, 0.0])
-                rospy.sleep(0.5)
-                self.__arm_action.send_cmd_vel([0.0, 0.0, 0.0])
-                rospy.sleep(0.5)
-                return False
+    def finished(self, tolerance: list, timeout: float):
+        if self.align_mode == AlignMode.OpenLoop:
+            return self.t2_open is not None and rospy.get_time() > self.t2_open
+        else:
+            return self.is_near_target_state_sometime(tolerance, timeout)
 
-        return True
+    def stop(self):
+        self.__arm_action.send_cmd_vel([0.0, 0.0, 0.0])
 
     def is_near_target_state_sometime(self, tolerance: list, timeout: float):
         satisfy = self.is_near_target_state(tolerance)
@@ -414,15 +405,12 @@ class align_action:
             return False
 
     def is_near_target_state(self, tolerance: list):
-        x1, y1, ang1 = self.__measured_state
-        x2, y2, ang2 = self.__target_state
+        x1, y1, ang1 = self.x_mv
+        x2, y2, ang2 = self.x_sp
         x_th, y_th, ang_th = tolerance
         satisfy_xy = abs(x1 - x2) < abs(x_th) and abs(y1 - y2) < abs(y_th)
         satisfy_ang = abs(ang1 - ang2) < abs(ang_th) if self.align_angle else True
         return satisfy_xy and satisfy_ang
-
-    def is_target_state_too_faraway(self):
-        return self.__measured_state[0] <= -0.5 or abs(self.__measured_state[1]) >= 2.0
 
 
 if __name__ == "__main__":
