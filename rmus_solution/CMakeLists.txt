@@ -23,6 +23,7 @@ add_service_files(
   switch.srv
   graspsignal.srv
   graspconfig.srv
+  keepoutmode.srv
 )
 
 generate_messages(
