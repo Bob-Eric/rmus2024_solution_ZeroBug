@@ -20,11 +20,13 @@ class gamecore:
         self.wait_for_services()
 
         rospy.loginfo("Get all rospy sevice!")
-        self.navigation = rospy.ServiceProxy("/set_navigation_goal", setgoal)
+        self.navigation = rospy.ServiceProxy("/navigation/goal", setgoal)
         self.aligner = rospy.ServiceProxy("/manipulator/grasp", graspsignal)
-        self.img_switch_mode = rospy.ServiceProxy( "/img_processor/mode", switch)
-        self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
-        self.keep_out_mode = rospy.ServiceProxy("/keep_out_mode", keepoutmode)
+        self.img_switch_mode = rospy.ServiceProxy("/img_processor/mode", switch)
+        self.swtch_align_mode = rospy.ServiceProxy(
+            "/manipulator/grasp_config", graspconfig
+        )
+        self.keep_out_mode = rospy.ServiceProxy("/keep_out_layer/mode", keepoutmode)
         """ gamecore state params: """
         self.observing = (
             True  ## if self.observing == True, classify the block to mining areas
@@ -85,7 +87,7 @@ class gamecore:
     def wait_for_services(self):
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_service("/set_navigation_goal", 1.0)
+                rospy.wait_for_service("/navigation/goal", 1.0)
                 break
             except:
                 rospy.logwarn("Waiting for set_navigation_goal Service")

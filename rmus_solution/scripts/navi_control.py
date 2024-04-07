@@ -108,10 +108,10 @@ class router:
         rospy.sleep(2.0)
 
         self.__set_goal_service = rospy.Service(
-            "/set_navigation_goal", setgoal, self.setgoalCallback
+            "/navigation/goal", setgoal, self.setgoalCallback
         )
         self.__keep_out_mode_service = rospy.Service(
-            "/keep_out_mode", keepoutmode, self.keepoutmodeCallback
+            "/keep_out_layer/mode", keepoutmode, self.keepoutmodeCallback
         )
         self.__xju_service = rospy.ServiceProxy(
             "/move_base/global_costmap/keep_out_layer/xju_zone", keepOutZone

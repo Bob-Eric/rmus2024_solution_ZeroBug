@@ -32,7 +32,6 @@ class arm_action:
         self.movement_active_time = 0.0
         self.align_mode = AlignMode.OpenLoop
         self.__vel_old = [0.0, 0.0, 0.0]
-        self.__can_arm_grasp_old = False
         """ config params """
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
@@ -54,28 +53,6 @@ class arm_action:
             # get the time when the movement starts
             self.movement_start_time = rospy.get_time()
         self.__vel_old = self.__vel
-
-    def can_arm_grasp_sometime(
-        self, target_in_arm_base: list, timeout: float, align_mode: AlignMode
-    ):
-
-        return True
-
-        if align_mode == AlignMode.OpenLoop:
-            return True
-        else:
-            satisfy = self.can_arm_grasp(target_in_arm_base)
-            if satisfy and not self.__can_arm_grasp_old:
-                # check if the robot can grasp for the first time
-                self.__can_arm_grasp_start_time = rospy.get_time()
-                ...
-            self.__can_arm_grasp_old = satisfy
-
-            if satisfy and rospy.get_time() - self.__can_arm_grasp_start_time > timeout:
-                # check if the robot can grasp for timeout
-                return True
-            else:
-                return False
 
     def can_arm_grasp(self, target_in_arm_base: list):
         if target_in_arm_base is None:
@@ -166,7 +143,7 @@ class arm_action:
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo("<manipulator>: now prepare to place (first layer)")
         extension = 0.21
-        height = -0.04 + 0.055 * (place_layer - 1)
+        height = 0.0 + 0.055 * (place_layer - 1)
         self.set_arm(extension, height)
 
     def grasp(self, target_in_arm_base: list):
@@ -210,7 +187,7 @@ class arm_action:
         rospy.sleep(2.0)
 
     def preparation_for_place(self, place_layer: int):
-        """ takes ~3 seconds to brake and elevate gripper """
+        """takes ~3 seconds to brake and elevate gripper"""
         rospy.loginfo("First align then place")
         self.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
@@ -225,13 +202,8 @@ class align_action:
         self.__arm_action = arm_act
         self.tfBuffer = tf2_ros.Buffer()
         tf2_ros.TransformListener(self.tfBuffer)
-        self.__base_link_pos_timer = rospy.Timer(
-            rospy.Duration(2.5), self.__base_link_pos_callback
-        )
         """ state params """
         self.align_mode = AlignMode.OpenLoop
-        self.__base_link_pos_old = [0.0, 0.0]
-        self.__delta_pos = 0.0
         self.__is_near_target_state_old = False
         self.x_sp = None  ## state, set point
         self.x_mv = None  ## state, measured variable
@@ -243,24 +215,13 @@ class align_action:
             "yctl": PID(),
         }  ## Ki is for sep_dist
         self.open_cfg = {
-            "v1": 0.5,
-            "v2": 0.25,
+            "v1": 0.3,
+            "v2": 0.2,
             "offset_x": 0.1,
             "t_swtch": 1,
         }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
         self.ss_cfg = {"decay": 3, "decay_near": 9, "dist_thresh": 0.1}
         self.align_angle = False
-
-    def __base_link_pos_callback(self, timer_event):
-        base_link_tf_stamped: TransformStamped = self.tfBuffer.lookup_transform(
-            "base_link", "map", rospy.Time(0), rospy.Duration(1.0)
-        )
-        base_link_pos_vec: Vector3 = base_link_tf_stamped.transform.translation
-        base_link_pos = [base_link_pos_vec.x, base_link_pos_vec.y]
-        self.__delta_pos = np.linalg.norm(
-            np.array(base_link_pos) - np.array(self.__base_link_pos_old)
-        )
-        self.__base_link_pos_old = base_link_pos
 
     def set_pid_param(self, Kp: float, Ki: float, Kd: float, sep_Ki_thres: float):
         ## alias
@@ -349,7 +310,9 @@ class align_action:
         """
         ########## for debug ##########
         err = np.array(self.x_mv) - np.array(self.x_sp)
-        print(f"==> ctrl err: {100*err[0]:.1f}cm, {100*err[1]:.1f}cm, {np.rad2deg(err[2]):.1f}degree")
+        print(
+            f"==> ctrl err: {100*err[0]:.1f}cm, {100*err[1]:.1f}cm, {np.rad2deg(err[2]):.1f}degree"
+        )
         ###############################
         vel = [0.0, 0.0, 0.0]
         if self.align_mode == AlignMode.PID:
@@ -409,7 +372,9 @@ class align_action:
         x2, y2, ang2 = self.x_sp
         x_th, y_th, ang_th = tolerance
         satisfy_xy = abs(x1 - x2) < abs(x_th) and abs(y1 - y2) < abs(y_th)
-        satisfy_ang = abs(ang1 - ang2) < abs(ang_th) if self.align_angle else True
+        satisfy_ang = True
+        if self.align_mode == AlignMode.StateSpace and self.align_angle:
+            satisfy_ang = abs(ang1 - ang2) < abs(ang_th)
         return satisfy_xy and satisfy_ang
 
 
