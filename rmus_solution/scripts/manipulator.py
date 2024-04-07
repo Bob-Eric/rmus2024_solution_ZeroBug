@@ -132,9 +132,9 @@ class manipulator:
             rospy.loginfo("latency detected!")
             # Go back for 0.5s
             if rospy.get_time() - initial_time > 1.0:
-                self.arm_act.send_cmd_vel([-0.2, 0.0, 0.0])
+                self.align_act.send_cmd_vel([-0.2, 0.0, 0.0])
                 rospy.sleep(0.3)
-                self.arm_act.send_cmd_vel([0.0, 0.0, 0.0])
+                self.align_act.send_cmd_vel([0.0, 0.0, 0.0])
             if rospy.get_time() - initial_time > 2.0:
                 return self.grp_sig_resp(
                     False, "Can't get the marker info in time", ErrorCode.Latency
@@ -161,24 +161,24 @@ class manipulator:
 
     def timer_callback(self, event):
 
-        self.id_targ = 7
+        self.id_targ = 3
         if (
             self.pose_targ.orientation.x != 0
             and self.pose_targ.orientation.y != 0
             and self.pose_targ.orientation.z != 0
             and self.pose_targ.orientation.w != 0
         ):
-            rospy.loginfo(f"pos_cam: {self.pose_targ.position}")
+            # rospy.loginfo(f"pos_cam: {self.pose_targ.position}")
 
             pos_arm_link, ang_arm_link = self.transfer_frame(
                 self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
             )
-            rospy.loginfo(f"pos_chassis: {pos_arm_link}, ang_chassis: {ang_arm_link}")
+            # rospy.loginfo(f"pos_chassis: {pos_arm_link}, ang_chassis: {ang_arm_link}")
 
             pos_arm_base, ang_arm_base = self.transfer_frame(
                 self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm
             )
-            rospy.loginfo(f"pos_arm_base: {pos_arm_base}, ang_arm_base: {ang_arm_base}")
+            print(f"ang_arm_base: {ang_arm_base:.3f}")
 
     @property
     def x_sp_grasp(self):
@@ -228,7 +228,7 @@ class manipulator:
                 False, "Invalid marker id", ErrorCode.InvalidMarkerID
             )
         ## takes ~3 seconds to brake and open gripper
-        self.arm_act.preparation_for_grasp()
+        self.arm_act.preparation_for_grasp(self.align_act)
         """ align first """
         x_sp = self.x_sp_grasp
         self.align_act.init_ctrl()
@@ -251,7 +251,7 @@ class manipulator:
         pos_arm, _ = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm
         )
-        self.arm_act.grasp(pos_arm)
+        self.arm_act.grasp(self.align_act, pos_arm)
         """ response with success """
         return self.grp_sig_resp(True, "Grasp block", ErrorCode.Success)
 
@@ -266,7 +266,7 @@ class manipulator:
                 False, "Invalid marker id", ErrorCode.InvalidMarkerID
             )
         ## takes ~3 seconds to brake and elevate gripper
-        self.arm_act.preparation_for_place(place_layer)
+        self.arm_act.preparation_for_place(self.align_act, place_layer)
         """ align first """
         x_sp = self.x_sp_place
         self.align_act.init_ctrl()
@@ -286,7 +286,7 @@ class manipulator:
                 break
             rate.sleep()
         """ place when aligned """
-        self.arm_act.place()
+        self.arm_act.place(self.align_act)
         """ response with success """
         return self.grp_sig_resp(True, "Place block", ErrorCode.Success)
 
@@ -324,7 +324,7 @@ class manipulator:
         self.min_angular_velocity = config["min_angular_velocity"]
         self.seperate_I_threshold = config["seperate_I_threshold"]
 
-        self.arm_act.apply_velocity_limit(
+        self.align_act.apply_velocity_limit(
             self.max_velocity,
             self.max_angular_velocity,
             self.min_velocity,
