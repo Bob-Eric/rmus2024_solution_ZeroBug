@@ -198,7 +198,6 @@ class manipulator:
 
     def grasp(self, rate):
         """call arm_ctrl to grasp block, will take a few seconds to return (AKA blocking type)"""
-        resp = graspsignalResponse()
         if not 1 <= self.id_targ <= 6:
             print(f"Invalid marker id: {self.id_targ}")
             return self.grp_sig_resp(
@@ -221,17 +220,19 @@ class manipulator:
             self.align_act.align()
             if self.align_act.finished(self.state_tolerance, 1.0):
                 print("align finished")
+                self.align_act.stop()
                 break
             rate.sleep()
         """ grasp when aligned """
-        pos_arm, _ = self.transfer_frame(self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm)
+        pos_arm, _ = self.transfer_frame(
+            self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm
+        )
         self.arm_act.grasp(pos_arm)
         """ response with success """
         return self.grp_sig_resp(True, "Grasp block", ErrorCode.Success)
 
     def place(self, rate, place_layer: int = 1):
         """call arm_ctrl to place block, will take a few seconds to return (AKA blocking type)"""
-        resp = graspsignalResponse()
         if place_layer < 1 or place_layer > 3:
             print(f"Invalid layer: {place_layer}")
             return self.grp_sig_resp(False, "Invalid layer", ErrorCode.InvalidLayer)
@@ -257,6 +258,7 @@ class manipulator:
             self.align_act.align()
             if self.align_act.finished(self.state_tolerance, 1.0):
                 print("align finished")
+                self.align_act.stop()
                 break
             rate.sleep()
         """ place when aligned """
@@ -329,10 +331,10 @@ class manipulator:
         #     {pose_dst.orientation}; {pose_src.orientation}")
         quat = np.array(
             [
-                pose_dst.orientation.x,
-                pose_dst.orientation.y,
-                pose_dst.orientation.z,
-                pose_dst.orientation.w,
+                pose_src.orientation.x,
+                pose_src.orientation.y,
+                pose_src.orientation.z,
+                pose_src.orientation.w,
             ]
         )
         angle = sciR.from_quat(quat).as_euler("YXZ")[0]
