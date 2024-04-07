@@ -5,7 +5,7 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose, PoseArray, Point, TransformStamped
+from geometry_msgs.msg import Pose, PoseArray, Point, TransformStamped, Quaternion
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 from threading import Thread
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Slerp
 from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
 
@@ -215,6 +216,27 @@ class Processor:
         point.x, point.y, point.z = array
         return point
 
+    def quat2array(self, quat: Quaternion) -> np.ndarray:
+        return np.array([quat.x, quat.y, quat.z, quat.w])
+
+    def array2quat(self, array):
+        quat = Quaternion()
+        quat.x, quat.y, quat.z, quat.w = array
+        return quat
+
+    def low_pass_filter_for_quat(self, last_quat, new_quat, inertia=0.9):
+        # 创建四元数旋转对象
+        Rs = R.from_quat([last_quat, new_quat])
+        Ts = [0, 1]
+        # 计算两个四元数之间的slerp插值
+        slerp = Slerp(Ts, Rs)
+        # 计算两个四元数之间的slerp插值
+        r_slerp = slerp([inertia])
+
+        # 返回插值后的四元数
+        return r_slerp.as_quat()[0]
+        ...
+
     def low_pass_filter(self, last_pos, new_pos, inertia=0.9) -> np.array:
         return inertia * last_pos + (1 - inertia) * new_pos
 
@@ -295,6 +317,16 @@ class Processor:
                 )
                 self.blocks_info_lpf[i][1].position = self.array2point(
                     self.low_pass_filter(gp1, gp2)
+                )
+                q1 = self.quat2array(self.blocks_info_lpf[i][0].orientation)
+                q2 = self.quat2array(self.blocks_info[i][0].orientation)
+                gq1 = self.quat2array(self.blocks_info_lpf[i][1].orientation)
+                gq2 = self.quat2array(self.blocks_info[i][1].orientation)
+                self.blocks_info_lpf[i][0].orientation = self.array2quat(
+                    self.low_pass_filter_for_quat(q1, q2)
+                )
+                self.blocks_info_lpf[i][1].orientation = self.array2quat(
+                    self.low_pass_filter_for_quat(gq1, gq2)
                 )
         ## publish blocks info
         self.publish_blocks_info()

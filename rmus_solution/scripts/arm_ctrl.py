@@ -22,7 +22,6 @@ class arm_action:
     def __init__(self):
         self.__gripper_pub = rospy.Publisher("arm_gripper", Point, queue_size=10)
         self.__position_pub = rospy.Publisher("arm_position", Pose, queue_size=10)
-        self.__cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         self.__cmd_vel_sub = rospy.Subscriber(
             "/cmd_vel", Twist, self.__cmd_vel_callback
         )
@@ -30,13 +29,7 @@ class arm_action:
         self.movement_start_time = 0.0
         self.movement_end_time = 0.0
         self.movement_active_time = 0.0
-        self.align_mode = AlignMode.OpenLoop
         self.__vel_old = [0.0, 0.0, 0.0]
-        """ config params """
-        self.max_vel = 0.3
-        self.max_angular_vel = 0.3
-        self.min_vel = 0.0
-        self.min_angular_vel = 0.0
 
     def __cmd_vel_callback(self, msg: Twist):
         self.__vel = [msg.linear.x, msg.linear.y, msg.angular.z]
@@ -68,35 +61,6 @@ class arm_action:
 
     def is_vel_active(self):
         return np.linalg.norm(self.__vel[0:2]) >= 0.2
-
-    def send_cmd_vel(self, vel: list):
-        vel[0] = np.clip(fabs(vel[0]), self.min_vel, self.max_vel) * np.sign(vel[0])
-        vel[1] = np.clip(fabs(vel[1]), self.min_vel, self.max_vel) * np.sign(vel[1])
-        vel[2] = np.clip(
-            fabs(vel[2]), self.min_angular_vel, self.max_angular_vel
-        ) * np.sign(vel[2])
-
-        twist = Twist()
-        twist.linear.z = 0.0
-        twist.linear.x = vel[0]
-        twist.linear.y = vel[1]
-        twist.angular.z = vel[2]
-        twist.angular.x = 0.0
-        twist.angular.y = 0.0
-        self.__cmd_vel_pub.publish(twist)
-        # rospy.loginfo(f"send cmd_vel: {vel}")
-
-    def apply_velocity_limit(
-        self,
-        max_vel: float,
-        max_angular_vel: float,
-        min_vel=0.0,
-        min_angular_vel=0.0,
-    ):
-        self.max_vel = max_vel
-        self.max_angular_vel = max_angular_vel
-        self.min_vel = min_vel
-        self.min_angular_vel = min_angular_vel
 
     def get_last_vel(self):
         return self.__vel
@@ -143,10 +107,10 @@ class arm_action:
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo("<manipulator>: now prepare to place (first layer)")
         extension = 0.21
-        height = 0.0 + 0.055 * (place_layer - 1)
+        height = 0.02 + 0.055 * (place_layer - 1)
         self.set_arm(extension, height)
 
-    def grasp(self, target_in_arm_base: list):
+    def grasp(self, align_act, target_in_arm_base: list):
         # print(f"-------------------- {target_in_arm_base} --------------------")
         extension = np.clip(target_in_arm_base[0], 0.09, 0.22)
         height = max(target_in_arm_base[2], -0.08)
@@ -157,39 +121,39 @@ class arm_action:
         rospy.sleep(1.5)
         self.reset_pos()
         ## move backwards a little bit
-        self.send_cmd_vel([-0.3, 0.0, 0.0])
+        align_act.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
-        self.send_cmd_vel([0.0, 0.0, 0.0])
+        align_act.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
 
-    def place(self):
-        self.send_cmd_vel([0.0, 0.0, 0.0])
+    def place(self, align_act):
+        align_act.send_cmd_vel([0.0, 0.0, 0.0])
         ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(1.0)
         # print("Place: reach the goal for placing.")
         self.open_gripper()
         rospy.sleep(2.0)
         ## move backwards a little bit
-        self.send_cmd_vel([-0.3, 0.0, 0.0])
+        align_act.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
         self.reset_pos()
-        self.send_cmd_vel([0.0, 0.0, 0.0])
+        align_act.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
 
-    def preparation_for_grasp(self):
+    def preparation_for_grasp(self, align_act):
         """takes ~3 seconds to brake and open gripper"""
         rospy.loginfo("First align then grasp")
         rospy.loginfo("align to the right place")
-        self.send_cmd_vel([0.0, 0.0, 0.0])
+        align_act.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         self.reset_pos()
         self.open_gripper()
         rospy.sleep(2.0)
 
-    def preparation_for_place(self, place_layer: int):
+    def preparation_for_place(self, align_act, place_layer: int):
         """takes ~3 seconds to brake and elevate gripper"""
         rospy.loginfo("First align then place")
-        self.send_cmd_vel([0.0, 0.0, 0.0])
+        align_act.send_cmd_vel([0.0, 0.0, 0.0])
         rospy.sleep(0.5)
         self.place_pos(place_layer)
         rospy.sleep(2.0)
@@ -199,9 +163,7 @@ class arm_action:
 class align_action:
     def __init__(self, arm_act: arm_action):
         """object reference"""
-        self.__arm_action = arm_act
-        self.tfBuffer = tf2_ros.Buffer()
-        tf2_ros.TransformListener(self.tfBuffer)
+        self.__cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         """ state params """
         self.align_mode = AlignMode.OpenLoop
         self.__is_near_target_state_old = False
@@ -220,8 +182,38 @@ class align_action:
             "offset_x": 0.1,
             "t_swtch": 1,
         }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
-        self.ss_cfg = {"decay": 3, "decay_near": 9, "dist_thresh": 0.1}
+        self.ss_cfg = {"decay": 3, "decay_near": 6, "dist_thresh": 0.1}
         self.align_angle = False
+        self.max_vel = 0.3
+        self.max_angular_vel = 0.3
+        self.min_vel = 0.0
+        self.min_angular_vel = 0.0
+
+    def send_cmd_vel(self, vel: list):
+        vel[0] = np.clip(vel[0], -self.max_vel, self.max_vel)
+        vel[1] = np.clip(vel[1], -self.max_vel, self.max_vel)
+        vel[2] = np.clip(vel[2], -self.max_angular_vel, self.max_angular_vel)
+        twist = Twist()
+        twist.linear.z = 0.0
+        twist.linear.x = vel[0]
+        twist.linear.y = vel[1]
+        twist.angular.z = vel[2]
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
+        self.__cmd_vel_pub.publish(twist)
+        # print(f"send cmd_vel: {vel}")
+
+    def apply_velocity_limit(
+        self,
+        max_vel: float,
+        max_angular_vel: float,
+        min_vel=0.0,
+        min_angular_vel=0.0,
+    ):
+        self.max_vel = max_vel
+        self.max_angular_vel = max_angular_vel
+        self.min_vel = min_vel
+        self.min_angular_vel = min_angular_vel
 
     def set_pid_param(self, Kp: float, Ki: float, Kd: float, sep_Ki_thres: float):
         ## alias
@@ -261,13 +253,11 @@ class align_action:
     def set_align_config(self, align_angle: bool, align_mode: AlignMode):
         self.align_angle = align_angle
         self.align_mode = align_mode
-        self.__arm_action.align_mode = align_mode
 
     def __cal_custom_vel(self, measured_pos: list):
         x = measured_pos[0]
         y = measured_pos[1]
         error = np.array(measured_pos) - np.array(self.x_sp)
-
         decay = 0
         if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
             decay = self.ss_cfg["decay"]
@@ -277,6 +267,11 @@ class align_action:
         vel_ang = decay * error[2] if self.align_angle else 0.0
         vel_x = decay * error[0] + y * vel_ang
         vel_y = decay * error[1] - x * vel_ang
+        ## apply velocity limit
+        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.01 else 0
+        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.01 else 0
+        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) \
+            if fabs(vel_ang) > 0.002 else 0
         return [vel_x, vel_y, vel_ang]
 
     def init_ctrl(self):
@@ -341,7 +336,7 @@ class align_action:
                 print(f"open loop: PHASE2; vel: ({x/T2:.2f}, {y/T2:.2f})m/s")
             elif t < self.t2_open:
                 vel = self.v2_open.copy()
-        self.__arm_action.send_cmd_vel(vel)
+        self.send_cmd_vel(vel)
 
     def finished(self, tolerance: list, timeout: float):
         if self.align_mode == AlignMode.OpenLoop:
@@ -350,7 +345,7 @@ class align_action:
             return self.is_near_target_state_sometime(tolerance, timeout)
 
     def stop(self):
-        self.__arm_action.send_cmd_vel([0.0, 0.0, 0.0])
+        self.send_cmd_vel([0.0, 0.0, 0.0])
 
     def is_near_target_state_sometime(self, tolerance: list, timeout: float):
         satisfy = self.is_near_target_state(tolerance)
