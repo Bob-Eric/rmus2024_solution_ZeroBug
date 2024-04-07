@@ -90,7 +90,7 @@ class gamecore:
                 rospy.wait_for_service("/navigation/goal", 1.0)
                 break
             except:
-                rospy.logwarn("Waiting for set_navigation_goal Service")
+                rospy.logwarn("Waiting for navigation/goal Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():
