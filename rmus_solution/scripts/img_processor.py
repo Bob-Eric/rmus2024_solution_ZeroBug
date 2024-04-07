@@ -215,7 +215,7 @@ class Processor:
         point.x, point.y, point.z = array
         return point
 
-    def low_pass_filter(self, last_pos, new_pos, inertia=0.95) -> np.array:
+    def low_pass_filter(self, last_pos, new_pos, inertia=0.9) -> np.array:
         return inertia * last_pos + (1 - inertia) * new_pos
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
