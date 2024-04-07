@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from typing import Union
 import rospy
 import tf2_ros
 import tf2_geometry_msgs
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Pose, PoseArray, Point
+from geometry_msgs.msg import Pose, PoseArray, Point, TransformStamped
 from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import Image, CameraInfo
 from rmus_solution.srv import switch, switchResponse
@@ -18,9 +19,14 @@ from rtabmap_msgs.msg import RGBDImage
 from detect import marker_detection
 
 
+coord_cam = "camera_aligned_depth_to_color_frame_correct"
+coord_glb = "map"
+
+
 class ModeRequese(IntEnum):
     DoNothing = 0  ## disable marker_detection to save resources (160% cpu -> 60% cpu)
     BlockInfo = 1  ## actually not in use, blockinfo and gameinfo are detected simultaneously
+    
     GameInfo = 2
 
     End = 3
@@ -81,7 +87,10 @@ class Processor:
             while True:
                 self.collapsed = False
                 rospy.logerr("The visualization window has collapsed!")
-        rospy.Subscriber("/camera/color/image_raw", Image, self.imageCallback, queue_size=1)
+        self.br = tf2_ros.TransformBroadcaster()
+        rospy.Subscriber(
+            "/camera/color/image_raw", Image, self.imageCallback, queue_size=1
+        )
         rospy.Service("/img_processor/mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
@@ -96,31 +105,49 @@ class Processor:
     def imageCallback(self, image: Image):
         self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
         # self.depth_img = self.bridge.imgmsg_to_cv2(image.depth, "32FC1")
-        self.this_image_time_ms = int(image.header.stamp.nsecs / 1e6) \
-            + int(1000 * (image.header.stamp.secs - self.start_time))
+        self.this_image_time_ms = int(image.header.stamp.nsecs / 1e6) + int(
+            1000 * (image.header.stamp.secs - self.start_time)
+        )
         locked_current_mode = self.current_mode
 
         id_list, tvec_list, rvec_list = [], [], []
         if locked_current_mode != ModeRequese.DoNothing:
-            id_list, _, _, tvec_list, rvec_list = marker_detection(self.image, self.camera_matrix, self.verbose)
+            id_list, _, _, tvec_list, rvec_list = marker_detection(
+                self.image, self.camera_matrix, self.verbose
+            )
         ## update gameinfo (and publish)
         self.update_gameinfo(id_list, tvec_list)
         ## update blocks_info (and publish)
         self.update_blocks_info(id_list, tvec_list, rvec_list)
         self.current_visualization_image = self.image
 
+        ## send tf for visualization
+        for i in range(len(self.blocks_info)):
+            if self.blocks_info[i] is not None and self.blocks_info_lpf[i] is not None:
+                self.send_block_tf(
+                    i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info_lpf[i][1]
+                )
+
         ## publish gpose for visualization in rviz
         pose_msg = PoseArray()
-        pose_msg.header.frame_id = "map"
-        pose_msg.poses = [ blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None ]
+        pose_msg.header.frame_id = coord_glb
+        pose_msg.poses = [
+            blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None
+        ]
         self.pub_gpose_raw.publish(pose_msg)
-        pose_msg.poses = [ blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None ]
+        pose_msg.poses = [
+            blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None
+        ]
         self.pub_gpose_lpf.publish(pose_msg)
 
-        pose_msg.header.frame_id = "camera_aligned_depth_to_color_frame_correct"
-        pose_msg.poses = [ blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None ]
+        pose_msg.header.frame_id = coord_cam
+        pose_msg.poses = [
+            blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None
+        ]
         self.pub_pose_raw.publish(pose_msg)
-        pose_msg.poses = [ blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None ]
+        pose_msg.poses = [
+            blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None
+        ]
         self.pub_pose_lpf.publish(pose_msg)
         return
 
@@ -134,11 +161,36 @@ class Processor:
         else:
             return switchResponse(req.mode)
 
+    def send_block_tf(
+        self, block_id, pose: Union[Pose, None] = None, gpose: Union[Pose, None] = None
+    ):
+        tf_pose = TransformStamped()
+        tf_pose.header.stamp = rospy.Time.now()
+
+        if gpose is not None:
+            tf_pose.header.frame_id = coord_glb
+            tf_pose.child_frame_id = f"gpose_block_{block_id}"
+            tf_pose.transform.translation.x = gpose.position.x
+            tf_pose.transform.translation.y = gpose.position.y
+            tf_pose.transform.translation.z = gpose.position.z
+            tf_pose.transform.rotation = gpose.orientation
+            self.br.sendTransform(tf_pose)
+        if pose is not None:
+            tf_pose.header.frame_id = coord_cam
+            tf_pose.child_frame_id = f"pose_block_{block_id}"
+            tf_pose.transform.translation.x = pose.position.x
+            tf_pose.transform.translation.y = pose.position.y
+            tf_pose.transform.translation.z = pose.position.z
+            tf_pose.transform.rotation = pose.orientation
+            self.br.sendTransform(tf_pose)
+
     def update_gameinfo(self, id_list, tvec_list):
         gameinfo = [0, 0, 0]
         ## quads of gameinfo are high, so y component in camera frame is small. (x, y axis
         ##  of camera frame points right and downwards respectively), typical value is around -0.26.
-        digit_list = [ (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.15 ]
+        digit_list = [
+            (id_list[i], t[0]) for i, t in enumerate(tvec_list) if t[1] < -0.15
+        ]
         if len(digit_list) != 3:
             # print(f"detected {len(digit_list)} digits in gameinfo board, not 3")
             return
@@ -147,7 +199,9 @@ class Processor:
         if self.detected_gameinfo is None:
             self.detected_gameinfo = gameinfo
         if tuple(self.detected_gameinfo) != tuple(gameinfo):
-            rospy.logerr( f"detected different gameinfo: {gameinfo}, expected: {self.detected_gameinfo}")
+            rospy.logerr(
+                f"detected different gameinfo: {gameinfo}, expected: {self.detected_gameinfo}"
+            )
         ## publish gameinfo
         self.pub_p.publish(UInt8MultiArray(data=self.detected_gameinfo))
         print(f"gameinfo: {gameinfo}")
@@ -175,11 +229,13 @@ class Processor:
         ## get transform of coord_cam and coord_glb
         pose_list = [pose_aruco_2_ros(r, t) for t, r in zip(tvec_list, rvec_list)]
         gpose_list = []
-        coord_cam = "camera_aligned_depth_to_color_frame_correct"
-        coord_glb = "map"
         try:
-            trans = self.tfBuffer.lookup_transform(coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2))
-            inv_trans = self.tfBuffer.lookup_transform(coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2))
+            trans = self.tfBuffer.lookup_transform(
+                coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
+            )
+            inv_trans = self.tfBuffer.lookup_transform(
+                coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
+            )
         except Exception as e:
             print(f"Failed to get transform: {e}")
             return
@@ -204,7 +260,9 @@ class Processor:
                     gp2 = self.point2array(gpose_list[idx].position)
                     dist = np.linalg.norm(gp1 - gp2)
                     if np.linalg.norm(gp1 - gp2) > 0.2:
-                        rospy.logwarn(f"Block {id} has moved a lot ({dist:.2f}) from {gp1} to {gp2}. Maybe misdetection.")
+                        rospy.logwarn(
+                            f"Block {id} has moved a lot ({dist:.2f}) from {gp1} to {gp2}. Maybe misdetection."
+                        )
                 ###################################
                 self.blocks_info[i] = [
                     pose_list[idx],
@@ -232,8 +290,12 @@ class Processor:
                 p2 = self.point2array(self.blocks_info[i][0].position)
                 gp1 = self.point2array(self.blocks_info_lpf[i][1].position)
                 gp2 = self.point2array(self.blocks_info[i][1].position)
-                self.blocks_info_lpf[i][0].position = self.array2point(self.low_pass_filter(p1, p2))
-                self.blocks_info_lpf[i][1].position = self.array2point(self.low_pass_filter(gp1, gp2))
+                self.blocks_info_lpf[i][0].position = self.array2point(
+                    self.low_pass_filter(p1, p2)
+                )
+                self.blocks_info_lpf[i][1].position = self.array2point(
+                    self.low_pass_filter(gp1, gp2)
+                )
         ## publish blocks info
         self.publish_blocks_info()
         return

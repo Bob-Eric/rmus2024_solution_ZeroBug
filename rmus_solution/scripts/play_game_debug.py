@@ -58,7 +58,7 @@ class gamecore:
                 rospy.wait_for_service("/navigation/goal", 1.0)
                 break
             except:
-                rospy.logwarn("Waiting for set_navigation_goal Service")
+                rospy.logwarn("Waiting for navigation/goal Service")
                 rospy.sleep(0.5)
 
         while not rospy.is_shutdown():
@@ -71,10 +71,10 @@ class gamecore:
 
         while not rospy.is_shutdown():
             try:
-                rospy.wait_for_service("/image_processor_switch_mode", 1.0)
+                rospy.wait_for_service("/img_processor/mode", 1.0)
                 break
             except:
-                rospy.logwarn("Waiting for image_processor_switch_mode Service")
+                rospy.logwarn("Waiting for img_processor/mode Service")
                 rospy.sleep(0.5)
 
     def update_game_info(self, gameinfo: UInt8MultiArray):
