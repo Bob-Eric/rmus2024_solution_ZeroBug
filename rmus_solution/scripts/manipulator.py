@@ -104,6 +104,9 @@ class manipulator:
         self.align_angle = False
         self.align_mode = AlignMode.OpenLoop
         self.align_act.set_align_config(self.align_angle, self.align_mode)
+        ############ Test for rosbag ############
+        # rospy.Timer(rospy.Duration(0.05), self.timer_callback)
+        ############ Test for rosbag ############
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
@@ -155,6 +158,27 @@ class manipulator:
         self.align_act.set_align_config(self.align_angle, self.align_mode)
         resp.res = True
         return resp
+
+    def timer_callback(self, event):
+
+        self.id_targ = 7
+        if (
+            self.pose_targ.orientation.x != 0
+            and self.pose_targ.orientation.y != 0
+            and self.pose_targ.orientation.z != 0
+            and self.pose_targ.orientation.w != 0
+        ):
+            rospy.loginfo(f"pos_cam: {self.pose_targ.position}")
+
+            pos_arm_link, ang_arm_link = self.transfer_frame(
+                self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
+            )
+            rospy.loginfo(f"pos_chassis: {pos_arm_link}, ang_chassis: {ang_arm_link}")
+
+            pos_arm_base, ang_arm_base = self.transfer_frame(
+                self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm
+            )
+            rospy.loginfo(f"pos_arm_base: {pos_arm_base}, ang_arm_base: {ang_arm_base}")
 
     @property
     def x_sp_grasp(self):

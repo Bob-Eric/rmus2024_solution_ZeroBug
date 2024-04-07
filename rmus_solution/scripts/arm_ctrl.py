@@ -151,7 +151,7 @@ class arm_action:
         extension = np.clip(target_in_arm_base[0], 0.09, 0.22)
         height = max(target_in_arm_base[2], -0.08)
         self.set_arm(extension, height)
-        print(f"Grasp: move to ({extension:.2f}, {height:.2f})m")
+        print(f"Grasp: move to ({extension:.3f}, {height:.3f})m")
         rospy.sleep(1.5)
         self.close_gripper()
         rospy.sleep(1.5)
@@ -311,7 +311,7 @@ class align_action:
         ########## for debug ##########
         err = np.array(self.x_mv) - np.array(self.x_sp)
         print(
-            f"==> ctrl err: {100*err[0]:.1f}cm, {100*err[1]:.1f}cm, {np.rad2deg(err[2]):.1f}degree"
+            f"==> ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree"
         )
         ###############################
         vel = [0.0, 0.0, 0.0]
