@@ -62,7 +62,7 @@ class manipulator:
         self.id_targ = 0  ## target block id
         self.pose_targ = Pose()  ## target block pose
         """ config params """
-        self.state_tolerance = [0.02, 0.02, 0.1]
+        self.state_tolerance = [0.015, 0.015, 0.1]
 
         ############### Dynamic params ###############
         self.ros_rate = 10
@@ -102,7 +102,7 @@ class manipulator:
             manipulator_PIDConfig, self.dynamic_reconfigure_callback
         )
         self.align_angle = False
-        self.align_mode = AlignMode.OpenLoop
+        self.align_mode = AlignMode.PID
         self.align_act.set_align_config(self.align_angle, self.align_mode)
         ############ Test for rosbag ############
         # rospy.Timer(rospy.Duration(0.05), self.timer_callback)
