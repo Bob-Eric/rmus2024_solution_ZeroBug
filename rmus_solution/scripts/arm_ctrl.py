@@ -225,7 +225,7 @@ class align_action:
         xctl.reset()
         yctl.reset()
         self.pid_cfg["sep_dist"] = sep_Ki_thres
-        self.pid_cfg["Ki"] = sep_Ki_thres
+        self.pid_cfg["Ki"] = Ki
 
     def set_sample_time(self, sample_time: float):
         self.pid_cfg["xctl"].sample_time = sample_time
