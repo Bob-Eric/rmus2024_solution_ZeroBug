@@ -31,8 +31,8 @@ TebLocalPlannerROS:
   odom_topic: /ep/odom
   # Trajectory
   teb_autosize: True
-  dt_ref: 0.1
-  dt_hysteresis: 0.01
+  dt_ref: 0.3
+  dt_hysteresis: 0.03
   min_samples: 5 # default
   global_plan_overwrite_orientation: True
   global_plan_viapoint_sep: 0.1 # not fine-tuned
@@ -42,13 +42,13 @@ TebLocalPlannerROS:
   exact_arc_length: False
 
   # Robot
-  max_vel_x: 0.5
-  max_vel_x_backwards: 0.5
-  max_vel_y: 0.5 # for omnidirection
-  max_vel_theta: 0.5
+  max_vel_x: 0.4
+  max_vel_x_backwards: 0.15
+  max_vel_y: 0.4 # for omnidirection
+  max_vel_theta: 0.4
   acc_lim_x: 1.0
   acc_lim_y: 1.0 # for omnidirection
-  acc_lim_theta: 1.5
+  acc_lim_theta: 1.0
 
   is_footprint_dynamic: False
   min_turning_radius: 0.0 # diff-drive robot (can turn on place!)
@@ -71,8 +71,8 @@ TebLocalPlannerROS:
   inflaion_dist: 0.1 # not fine-tuned
 
   # Optimization
-  no_inner_iterations: 5 # may be enough
-  no_outer_iterations: 4 # may be enough
+  no_inner_iterations: 10 # may be enough
+  no_outer_iterations: 8 # may be enough
   optimization_activate: True
   optimization_verbose: False
   penalty_epsilon: 0.1
