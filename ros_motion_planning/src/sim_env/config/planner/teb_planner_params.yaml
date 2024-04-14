@@ -43,7 +43,7 @@ TebLocalPlannerROS:
 
   # Robot
   max_vel_x: 0.4
-  max_vel_x_backwards: 0.15
+  max_vel_x_backwards: 0.2
   max_vel_y: 0.4 # for omnidirection
   max_vel_theta: 0.4
   acc_lim_x: 1.0
@@ -56,7 +56,7 @@ TebLocalPlannerROS:
 
   footprint_model:
     type: "polygon"
-    vertices: [[-0.14, -0.12], [-0.14, 0.12], [0.14, 0.12], [0.14, -0.12]] # 2D shape of the robot
+    vertices: [[-0.16, -0.12], [-0.16, 0.12], [0.16, 0.12], [0.16, -0.12]] # 2D shape of the robot
 
   # GoalTolerance
   xy_goal_tolerance: 0.1

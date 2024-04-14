@@ -16,4 +16,8 @@ local_costmap:
     enabled: true
     fill_zones: true
 
-  inflation_radius: 0.25
+  inflation_layer:
+    enabled: true
+    cost_scaling_factor: 5.0 # exponential rate at which the obstacle cost drops off (default: 10)
+    inflation_radius: 0.35 # max. distance from an obstacle at which costs are incurred for planning paths.
+

@@ -66,7 +66,7 @@ class router:
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
         PointName.Noticeboard_1: (0.2, 0.2, pi / 4),
-        PointName.Noticeboard_2: (0, 1.65, 0),
+        PointName.Noticeboard_2: (0, 1.6, 0),
         PointName.Park: (3.16, -0.795, 0.00),
         PointName.Station_Front: (1.05, 1.55, pi / 12),
         PointName.Station_Back: (2.48, 1.80, pi),
@@ -141,7 +141,7 @@ class router:
             points[3] = pnt_tmp
             return points
 
-        size = 0.35
+        size = 0.25
 
         self.KeepOutPoints = {
             KeepOutArea.MiningArea_0: {
