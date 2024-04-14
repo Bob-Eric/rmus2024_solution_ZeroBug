@@ -117,7 +117,7 @@ class manipulator:
                 self.stamp = rospy.get_time()
 
     def grasp_signal_callback(self, req: graspsignalRequest):
-        """call `grasp()`, `place()` or `drop()` according to grasp signal"""
+        """call `grasp()`, `place()` or `drop()` according to grasp signal. Note: arm pos will be RESET when action done"""
         self.id_targ = req.marker_id
         # reset the arm
         if req.mode == AlignRequest.Reset:
