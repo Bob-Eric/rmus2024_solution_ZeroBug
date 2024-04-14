@@ -23,9 +23,7 @@ class gamecore:
         self.navigation = rospy.ServiceProxy("/navigation/goal", setgoal)
         self.aligner = rospy.ServiceProxy("/manipulator/grasp", graspsignal)
         self.img_switch_mode = rospy.ServiceProxy("/img_processor/mode", switch)
-        self.swtch_align_mode = rospy.ServiceProxy(
-            "/manipulator/grasp_config", graspconfig
-        )
+        self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
         self.keep_out_mode = rospy.ServiceProxy("/keep_out_layer/mode", keepoutmode)
         """ gamecore state params: """
         self.observing = (
@@ -49,43 +47,7 @@ class gamecore:
         """ gamecore logic: """
         self.img_switch_mode(ModeRequese.BlockInfo)
         self.observation()
-        ######### for test #########
-        def test_grasp_block(block_id, slot, layer, all:bool):
-            if all:
-                print(f"go get block {block_id} PID")
-                self.swtch_align_mode(2, 0)
-                self.go_get_block(block_id)
-                self.aligner(AlignRequest.Drop, 0, 0)
-                rospy.sleep(2)
-
-                print(f"go get block {block_id} state space")
-                self.swtch_align_mode(1, 0)
-                self.go_get_block(block_id)
-                self.aligner(AlignRequest.Drop, 0, 0)
-                rospy.sleep(2)
-
-                print(f"go get block {block_id} state space")
-                self.swtch_align_mode(1, 1)
-                self.go_get_block(block_id)
-                self.aligner(AlignRequest.Drop, 0, 0)
-                rospy.sleep(2)
-
-            print(f"go get block {block_id} open loop")
-            self.swtch_align_mode(0, 0)
-            self.go_get_block(block_id)
-            rospy.sleep(2)
-
-            print(f"stack {block_id} with open-loop alignment")
-            self.swtch_align_mode(0, 0)
-            self.stack(block_id, slot, layer)
-
-        test_grasp_block(1, 7, 1, True)
-        test_grasp_block(2, 8, 1, True)
-        test_grasp_block(3, 9, 1, False)
-        test_grasp_block(4, 7, 2, False)
-        test_grasp_block(5, 8, 2, False)
-        test_grasp_block(6, 9, 2, False)
-        ###########################
+        self.grasp_and_place()
         self.aligner(AlignRequest.Reset, 0, 0)
         self.navigation(PointName.Park, "")
 
@@ -170,10 +132,15 @@ class gamecore:
             mining_area_id = 0
         return mining_area_id
 
-    def go_get_block(self, block_id: int):
+    def go_get_block(self, block_id: int, retry: int = 0):
+        """ 
+        go to mining_area if target block's not in sight, try grasp the block once.
+            Assertion: target block must in sight in current pose, or spot0 or spot1 in mining area.
+            return True iff the block's not in sight after grasp action.
+        """
         area_idx = self.block_mining_area[block_id]
         if area_idx == -1:
-            rospy.logwarn(f"block {block_id} is not in the mining area")
+            rospy.logwarn(f"panic in go_get_block(): block {block_id} is not in the mining area.")
             return False
         navi_areas = [
             PointName.MiningArea_0_Vp_2,
@@ -184,36 +151,26 @@ class gamecore:
             PointName.MiningArea_2_Vp_2,
         ]
         print(f"fetching block {block_id} from area No.{area_idx}")
-        self.img_switch_mode(ModeRequese.GameInfo)
-        # if not self.blockinfo_dict[block_id].in_cam:
-        #     print(f"block {block_id} not found in sight, go to spot0...")
-        #     self.navigation(navi_areas[2*area_idx], "")
-        #     rospy.sleep(0.5)
-        # if not self.blockinfo_dict[block_id].in_cam:
-        #     print(f"block {block_id} not found in spot1, go to spot1...")
-        #     self.navigation(navi_areas[2*area_idx+1], "")
-        #     rospy.sleep(0.5)
-        # self.aligner(AlignRequest.Grasp, block_id, 0)
-        # return True
-
-        ############################################################
-        ## TODO: for test purpose, go to spot0 and spot1 alternatively
-        if not hasattr(self, "flag"):
-            ## if odd, go to spot1 first else spot2 first
-            self.flag = 0
-        order = [2*area_idx, 2*area_idx+1] if self.flag % 2 == 0 else [2*area_idx+1, 2*area_idx]
-        self.flag = 1 - self.flag
-        print(f"+++ go to spot{self.flag}...")
-        self.navigation(navi_areas[order[0]], "")
-        rospy.sleep(0.5)
+        self.img_switch_mode(ModeRequese.BlockInfo)
         if not self.blockinfo_dict[block_id].in_cam:
-            print(f"+++ block {block_id} not found in spot{self.flag}, go to spot{1-self.flag}...")
-            self.navigation(navi_areas[order[1]], "")
+            print(f"block {block_id} not found in sight, go to spot0...")
+            self.navigation(navi_areas[2*area_idx], "")
             rospy.sleep(0.5)
-        print("==> reach spot")
+        if not self.blockinfo_dict[block_id].in_cam:
+            print(f"block {block_id} not found in spot0, go to spot1...")
+            self.navigation(navi_areas[2*area_idx+1], "")
+            rospy.sleep(0.5)
+        if not self.blockinfo_dict[block_id].in_cam:
+            rospy.logwarn(f"panic in go_get_block(): block {block_id} is not in sight. cannot find it.")
+            return False
         self.aligner(AlignRequest.Grasp, block_id, 0)
-        return True
-        ############################################################
+        ## because arm pos will be reset when grasp done, target block shouldn't be sight.
+        for i in range(1, retry+1):
+            if self.blockinfo_dict[block_id].in_cam:
+                print(f"----------retry {i}----------")
+                self.aligner(AlignRequest.Grasp, block_id, 0)
+                print(f"----------retry {i} done----------")
+        return not self.blockinfo_dict[block_id].in_cam
 
     def stack(self, block_id: int, slot: int, layer: int):
         """stack the block to the given slot and layer"""
@@ -229,6 +186,7 @@ class gamecore:
         ):
             return -1
         block_info = self.blockinfo_dict[block_id]
+        ## TODO: height base is not correct
         ## block in layer 1 is at height of height_base
         block_size, height_base = 0.05, -0.045
         block_height = block_info.gpose.position.z
@@ -280,10 +238,8 @@ class gamecore:
         print("----------grasping three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
             print(f"----------grasping No.{i} block(id={target})----------")
-            done = self.go_get_block(target)
+            done = self.go_get_block(target, retry=1)
             if not done:
-                ## TODO: try another time
-                self.go_get_block(target)
                 continue
             self.navigation(PointName.Station_1 + i, "")
             self.stack(target, 7 + i, 1)
@@ -294,11 +250,12 @@ class gamecore:
         slots_order = [7, 7, 8]
         layers_order = [2, 3, 2]
         for i, target in enumerate(blocks_left):
+            if i == 2:
+                print("grasping and stacking last block, switch align mode to StateSpace")
+                self.swtch_align_mode(1, 1)
             print(f"----------grasping No.{i} block(id={target})----------")
-            done = self.go_get_block(target)
+            done = self.go_get_block(target, retry=1)
             if not done:
-                ## TODO: failure logic
-                self.go_get_block(target)
                 continue
             self.navigation(slots_order[i], "")
             self.stack(target, slots_order[i], layers_order[i])
