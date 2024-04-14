@@ -12,4 +12,8 @@ local_costmap:
   height: 3
   resolution: 0.05
 
-  inflation_radius: 0.2
+  keep_out_layer:
+    enabled: true
+    fill_zones: true
+
+  inflation_radius: 0.25
