@@ -71,12 +71,12 @@ class gamecore:
                 rospy.sleep(2)
 
             print(f"go get block {block_id} open loop")
-            self.swtch_align_mode(0, 0)
+            self.swtch_align_mode(2, 0)
             self.go_get_block(block_id)
             rospy.sleep(2)
 
             print(f"stack {block_id} with open-loop alignment")
-            self.swtch_align_mode(0, 0)
+            # self.swtch_align_mode(0, 0)
             self.stack(block_id, slot, layer)
 
         test_grasp_block(1, 7, 1, True)

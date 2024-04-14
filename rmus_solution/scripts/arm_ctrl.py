@@ -182,7 +182,7 @@ class align_action:
             "offset_x": 0.1,
             "t_swtch": 1,
         }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
-        self.ss_cfg = {"decay": 3, "decay_near": 6, "dist_thresh": 0.1}
+        self.ss_cfg = {"decay": 1, "decay_near": 1.5, "dist_thresh": 0.1}
         self.align_angle = False
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
