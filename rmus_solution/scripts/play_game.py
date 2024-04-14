@@ -247,12 +247,10 @@ class gamecore:
         print("----------done grasping three basic blocks----------")
         blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
         print(f"stacking the rest of the blocks: {blocks_left}")
+        self.swtch_align_mode(1, 1)
         slots_order = [7, 7, 8]
         layers_order = [2, 3, 2]
         for i, target in enumerate(blocks_left):
-            if i == 2:
-                print("grasping and stacking last block, switch align mode to StateSpace")
-                self.swtch_align_mode(1, 1)
             print(f"----------grasping No.{i} block(id={target})----------")
             done = self.go_get_block(target, retry=1)
             if not done:
