@@ -172,17 +172,17 @@ class align_action:
         """ config params """
         self.pid_cfg: dict[str, Union[float, PID]] = {
             "Ki": 0.0,
-            "sep_dist": 0.0,
+            "Isep": 0.0,
             "xctl": PID(),
             "yctl": PID(),
-        }  ## Ki is for sep_dist
+        }  ## Isep is integral separation
         self.open_cfg = {
             "v1": 0.3,
             "v2": 0.2,
             "offset_x": 0.1,
             "t_swtch": 1,
         }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
-        self.ss_cfg = {"decay": 1, "decay_near": 1.5, "dist_thresh": 0.1}
+        self.ss_cfg = {"Ki": 2, "Kp": 0.8, "Isep": 0.3}
         self.align_angle = False
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
@@ -224,20 +224,18 @@ class align_action:
         yctl.tunings = (Kp, Ki, Kd)
         xctl.reset()
         yctl.reset()
-        self.pid_cfg["sep_dist"] = sep_Ki_thres
+        self.pid_cfg["Isep"] = sep_Ki_thres
         self.pid_cfg["Ki"] = Ki
 
     def set_sample_time(self, sample_time: float):
         self.pid_cfg["xctl"].sample_time = sample_time
         self.pid_cfg["yctl"].sample_time = sample_time
 
-    def set_decay(self, decay: float):
-        self.ss_cfg["decay"] = decay
-
     def __cal_pid_vel(self, measured_pos: list):
+        error = np.array(measured_pos) - np.array(self.x_sp)
         if (
             np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.x_sp[0:2]))
-            > self.pid_cfg["sep_dist"]
+            > self.pid_cfg["Isep"]
         ):
             self.pid_cfg["xctl"].Ki = 0
             self.pid_cfg["yctl"].Ki = 0
@@ -245,33 +243,30 @@ class align_action:
             self.pid_cfg["xctl"].Ki = self.pid_cfg["Ki"]
             self.pid_cfg["yctl"].Ki = self.pid_cfg["Ki"]
 
+        vel_ang = np.clip(2*error[2], -self.max_angular_vel, self.max_angular_vel) if self.align_angle else 0.0
         vel_x = -self.pid_cfg["xctl"](measured_pos[0])
         vel_y = -self.pid_cfg["yctl"](measured_pos[1])
 
-        return [vel_x, vel_y, 0.0]
+        return [vel_x, vel_y, vel_ang]
 
     def set_align_config(self, align_angle: bool, align_mode: AlignMode):
         self.align_angle = align_angle
         self.align_mode = align_mode
 
     def __cal_custom_vel(self, measured_pos: list):
-        x = measured_pos[0]
-        y = measured_pos[1]
+        x, y = measured_pos[0:2]
         error = np.array(measured_pos) - np.array(self.x_sp)
-        decay = 0
-        if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
-            decay = self.ss_cfg["decay"]
-        else:
-            decay = self.ss_cfg["decay_near"]
-
-        vel_ang = decay * error[2] if self.align_angle else 0.0
-        vel_x = decay * error[0] + y * vel_ang
-        vel_y = decay * error[1] - x * vel_ang
+        Kp = self.ss_cfg["Kp"]
+        Ki = self.ss_cfg["Ki"]
+        self.error_sum = (np.abs(error) < Isep) * (self.error_sum + error)
+        ## angular velocity dead zone is small enough to neglect, so we just use Kp to control it
+        vel_ang = Kp * error[2] if self.align_angle else 0.0
+        vel_x = Kp * error[0] + Ki * error_sum[0] + y * vel_ang
+        vel_y = Kp * error[1] + ki * error_sum[1] - x * vel_ang
         ## apply velocity limit
-        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.01 else 0
-        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.01 else 0
-        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) \
-            if fabs(vel_ang) > 0.002 else 0
+        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.04 else 0
+        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.04 else 0
+        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) if fabs(vel_ang) > 0.002 else 0
         return [vel_x, vel_y, vel_ang]
 
     def init_ctrl(self):
