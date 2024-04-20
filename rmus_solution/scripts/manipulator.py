@@ -65,23 +65,23 @@ class manipulator:
         self.state_tolerance = [0.015, 0.015, 0.1]
 
         ############### Dynamic params ###############
-        self.ros_rate = 10
+        self.ros_rate = 30
         self.timeout = 10
-        self.Kp = 0.5
-        self.Ki = 0.0
-        self.Kd = 0.0
+        self.Kp = 4
+        self.Ki = 2
+        self.Kd = 0
         self.pos_sp_grasp = [
-            0.5,
+            0.2,
             0.0,
         ]  ## desired pos of block in arm_base frame when grasping (SetPoint)
         self.pos_sp_place = [
-            0.5,
+            0.18,
             0.0,
         ]  ## desired pos of tag in arm_base frame when aligning to place (SetPoint)
-        self.max_velocity = 0.5
-        self.min_velocity = 0.1
-        self.max_angular_velocity = 0.5
-        self.min_angular_velocity = 0.1
+        self.max_velocity = 0.3
+        self.min_velocity = 0.05
+        self.max_angular_velocity = 0.3
+        self.min_angular_velocity = 0.01
         ############### Dynamic params ###############
 
         self.tfBuffer = tf2_ros.Buffer()
@@ -156,7 +156,7 @@ class manipulator:
         self.align_mode = AlignMode(req.align_mode)
         resp = graspconfigResponse()
         self.align_act.set_align_config(self.align_angle, self.align_mode)
-        resp.res = True
+        resp.res = "Set align mode to " + str(self.align_mode)
         return resp
 
     def timer_callback(self, event):
