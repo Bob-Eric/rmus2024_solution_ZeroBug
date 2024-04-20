@@ -1,4 +1,4 @@
 uint8 align_mode
 uint8 align_angle
 ---
-bool res
+string res
