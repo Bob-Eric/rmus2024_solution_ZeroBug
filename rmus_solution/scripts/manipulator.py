@@ -123,9 +123,7 @@ class manipulator:
         if req.mode == AlignRequest.Reset:
             self.arm_act.reset_pos()
             self.arm_act.open_gripper()
-            return self.grp_sig_resp(
-                True, "reset arm position and open gripper", ErrorCode.Success
-            )
+            return self.grp_sig_resp(True, "reset arm position and open gripper", ErrorCode.Success)
         # if image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.stamp > 0.1:
@@ -353,9 +351,6 @@ class manipulator:
         posestamped_dst = self.tfBuffer.transform(posestamped_src, frame_dst)
         pose_dst = posestamped_dst.pose
         pos = [pose_dst.position.x, pose_dst.position.y, pose_dst.position.z]
-        ## TODO: check if rot_dst and rot_src in transfer_frame() are the same
-        # print(f"==> assert rot_dst and rot_src in transfer_frame() are the same: \
-        #     {pose_dst.orientation}; {pose_src.orientation}")
         quat = np.array(
             [
                 pose_src.orientation.x,
