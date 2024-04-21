@@ -172,10 +172,10 @@ class align_action:
         """ config params """
         self.pid_cfg: dict[str, Union[float, PID]] = {
             "Ki": 0.0,
-            "sep_dist": 0.0,
+            "Isep": 0.0,
             "xctl": PID(),
             "yctl": PID(),
-        }  ## Ki is for sep_dist
+        }  ## Isep is integral separation
         self.open_cfg = {
             "v1": 0.3,
             "v2": 0.2,
@@ -224,20 +224,17 @@ class align_action:
         yctl.tunings = (Kp, Ki, Kd)
         xctl.reset()
         yctl.reset()
-        self.pid_cfg["sep_dist"] = sep_Ki_thres
+        self.pid_cfg["Isep"] = sep_Ki_thres
         self.pid_cfg["Ki"] = Ki
 
     def set_sample_time(self, sample_time: float):
         self.pid_cfg["xctl"].sample_time = sample_time
         self.pid_cfg["yctl"].sample_time = sample_time
 
-    def set_decay(self, decay: float):
-        self.ss_cfg["decay"] = decay
-
     def __cal_pid_vel(self, measured_pos: list):
         if (
             np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.x_sp[0:2]))
-            > self.pid_cfg["sep_dist"]
+            > self.pid_cfg["Isep"]
         ):
             self.pid_cfg["xctl"].Ki = 0
             self.pid_cfg["yctl"].Ki = 0
@@ -255,8 +252,7 @@ class align_action:
         self.align_mode = align_mode
 
     def __cal_custom_vel(self, measured_pos: list):
-        x = measured_pos[0]
-        y = measured_pos[1]
+        x, y = measured_pos[0:2]
         error = np.array(measured_pos) - np.array(self.x_sp)
         decay = 0
         if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
