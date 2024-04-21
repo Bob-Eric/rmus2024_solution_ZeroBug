@@ -25,7 +25,7 @@
           -load_state_filename $(arg pbstream_file) "
   >
 
-    <remap from="scan" to="/rplidar/scan" />
+    <remap from="scan" to="/scan_multi" />
 
     <remap from="imu" to="/imu/data_raw" />
     <remap from="odom" to="/ep/odom" />
