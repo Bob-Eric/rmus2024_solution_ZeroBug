@@ -59,3 +59,4 @@ __pycache__/
 *_chy.launch
 *_ym.launch
 *.log
+*_debug.py
