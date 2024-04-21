@@ -11,7 +11,7 @@
               $(find carto_slam)/param
           -configuration_basename $(arg configuration_basename)"
   >
-    <remap from="scan" to="/scan_multi" />
+    <remap from="scan" to="/rplidar/scan" />
 
     <remap from="imu" to="/imu/data_raw" />
     <remap from="odom" to="/ep/odom" />

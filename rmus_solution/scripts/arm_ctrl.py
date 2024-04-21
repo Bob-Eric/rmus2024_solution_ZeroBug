@@ -264,15 +264,27 @@ class align_action:
         vel_x = decay * error[0] + y * vel_ang
         vel_y = decay * error[1] - x * vel_ang
         ## apply velocity limit
-        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.01 else 0
-        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.01 else 0
-        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) \
-            if fabs(vel_ang) > 0.002 else 0
+        vel_x = (
+            np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x)
+            if fabs(vel_x) > 0.01
+            else 0
+        )
+        vel_y = (
+            np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y)
+            if fabs(vel_y) > 0.01
+            else 0
+        )
+        vel_ang = (
+            np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel)
+            * np.sign(vel_ang)
+            if fabs(vel_ang) > 0.002
+            else 0
+        )
         return [vel_x, vel_y, vel_ang]
 
     def init_ctrl(self):
         """init all controllers for align_action afterwards"""
-        self.__aligned = False      ## indicate if angle is aligned
+        self.__aligned = False  ## indicate if angle is aligned
         ## init pid controller (integral, ...)
         self.pid_cfg["xctl"].reset()
         self.pid_cfg["yctl"].reset()
@@ -308,8 +320,13 @@ class align_action:
                 align_mode = AlignMode.StateSpace
             else:
                 self.__aligned = True
+                self.pid_cfg["xctl"].reset()
+                self.pid_cfg["yctl"].reset()
         ########## for debug ##########
-        print( f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
+        print(
+            f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree"
+        )
+
         ###############################
         if align_mode == AlignMode.PID:
             vel = self.__cal_pid_vel(self.x_mv)
