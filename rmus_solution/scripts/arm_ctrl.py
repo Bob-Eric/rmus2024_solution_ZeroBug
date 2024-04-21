@@ -182,12 +182,13 @@ class align_action:
             "offset_x": 0.1,
             "t_swtch": 1,
         }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
-        self.ss_cfg = {"decay": 1, "decay_near": 1.5, "dist_thresh": 0.1}
+        self.ss_cfg = {"Kp": 1.5, "Ki": 0.5, "Isep": 0.3}
         self.align_angle = False
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
         self.min_vel = 0.0
         self.min_angular_vel = 0.0
+        self.error_sum = 0.0
 
     def send_cmd_vel(self, vel: list):
         vel[0] = np.clip(vel[0], -self.max_vel, self.max_vel)
@@ -226,12 +227,14 @@ class align_action:
         yctl.reset()
         self.pid_cfg["Isep"] = sep_Ki_thres
         self.pid_cfg["Ki"] = Ki
+        self.error_sum = 0.0
 
     def set_sample_time(self, sample_time: float):
         self.pid_cfg["xctl"].sample_time = sample_time
         self.pid_cfg["yctl"].sample_time = sample_time
 
     def __cal_pid_vel(self, measured_pos: list):
+        error = np.array(measured_pos) - np.array(self.x_sp)
         if (
             np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.x_sp[0:2]))
             > self.pid_cfg["Isep"]
@@ -242,10 +245,15 @@ class align_action:
             self.pid_cfg["xctl"].Ki = self.pid_cfg["Ki"]
             self.pid_cfg["yctl"].Ki = self.pid_cfg["Ki"]
 
+        vel_ang = (
+            np.clip(2 * error[2], -self.max_angular_vel, self.max_angular_vel)
+            if self.align_angle
+            else 0.0
+        )
         vel_x = -self.pid_cfg["xctl"](measured_pos[0])
         vel_y = -self.pid_cfg["yctl"](measured_pos[1])
 
-        return [vel_x, vel_y, 0.0]
+        return [vel_x, vel_y, vel_ang]
 
     def set_align_config(self, align_angle: bool, align_mode: AlignMode):
         self.align_angle = align_angle
@@ -254,20 +262,28 @@ class align_action:
     def __cal_custom_vel(self, measured_pos: list):
         x, y = measured_pos[0:2]
         error = np.array(measured_pos) - np.array(self.x_sp)
-        decay = 0
-        if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
-            decay = self.ss_cfg["decay"]
-        else:
-            decay = self.ss_cfg["decay_near"]
-
-        vel_ang = decay * error[2] if self.align_angle else 0.0
-        vel_x = decay * error[0] + y * vel_ang
-        vel_y = decay * error[1] - x * vel_ang
+        Kp = self.ss_cfg["Kp"]
+        Ki = self.ss_cfg["Ki"]
+        self.error_sum = (np.abs(error) < self.ss_cfg["Isep"]) * (
+            self.error_sum + error
+        )
+        ## angular velocity dead zone is small enough to neglect, so we just use Kp to control it
+        vel_ang = Kp * error[2] if self.align_angle else 0.0
+        vel_x = Kp * error[0] + Ki * self.error_sum[0] + y * vel_ang
+        vel_y = Kp * error[1] + Ki * self.error_sum[1] - x * vel_ang
         ## apply velocity limit
-        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.01 else 0
-        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.01 else 0
-        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) \
-            if fabs(vel_ang) > 0.002 else 0
+        vel_x = (
+            np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x)
+            if fabs(vel_x) > 0.04
+            else 0
+        )
+        vel_y = (
+            np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y)
+            if fabs(vel_y) > 0.04
+            else 0
+        )
+        vel_ang = np.clip(vel_ang, -self.max_angular_vel, self.max_angular_vel)
+        print(f"angular spd: {vel_ang:.3f}")
         return [vel_x, vel_y, vel_ang]
 
     def init_ctrl(self):
@@ -277,7 +293,7 @@ class align_action:
         self.pid_cfg["xctl"].reset()
         self.pid_cfg["yctl"].reset()
         ## init state space controller (nothing to do here)
-        pass
+        self.error_sum = np.zeros(3)
         ## init open loop controller ()
         self.t1_open = None
         self.t2_open = None
@@ -289,6 +305,8 @@ class align_action:
         if self.align_mode == AlignMode.PID:
             self.pid_cfg["xctl"].setpoint = self.x_sp[0]
             self.pid_cfg["yctl"].setpoint = self.x_sp[1]
+        elif self.align_mode == AlignMode.StateSpace:
+            self.error_sum = 0.0
         return
 
     def set_state_mv(self, x_mv):
