@@ -26,9 +26,7 @@ class gamecore:
         self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
         self.keep_out_mode = rospy.ServiceProxy("/keep_out_layer/mode", keepoutmode)
         """ gamecore state params: """
-        self.observing = (
-            True  ## if self.observing == True, classify the block to mining areas
-        )
+        self.observing = True  ## if self.observing == True, classify the block to mining areas
         """ gamecore record data (global): """
         self.gameinfo = None
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
@@ -38,16 +36,17 @@ class gamecore:
         ## subscribe to gameinfo and blockinfo
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
-        ## switch to PID control (no angle alignment)
-        self.swtch_align_mode(2, 0)
+        ## switch to PID control (with angle alignment)
+        self.swtch_align_mode(2, 1)
         """ start gamecore logic """
-        self.navigation(PointName.Home, "")
         self.aligner(AlignRequest.Reset, 0, 0)
-        rospy.sleep(2)
+        self.navigation(PointName.Home, "")
+        rospy.sleep(1)
         """ gamecore logic: """
         self.img_switch_mode(ModeRequese.BlockInfo)
         self.observation()
         self.grasp_and_place()
+        self.keep_out_mode(KeepOutMode.AddAll, 0)
         self.aligner(AlignRequest.Reset, 0, 0)
         self.navigation(PointName.Park, "")
 
@@ -247,7 +246,6 @@ class gamecore:
         print("----------done grasping three basic blocks----------")
         blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
         print(f"stacking the rest of the blocks: {blocks_left}")
-        self.swtch_align_mode(1, 1)
         slots_order = [7, 7, 8]
         layers_order = [2, 3, 2]
         for i, target in enumerate(blocks_left):
@@ -263,9 +261,9 @@ class gamecore:
         ## check stacking
         b1, b2, b3 = self.gameinfo.data
         b4, b5, b6 = blocks_left
-        self.check_stacked_blocks(
-            {b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)}
-        )
+        stack_fin = self.check_stacked_blocks({b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)})
+        if stack_fin:
+            print("perfect!")
 
 
 if __name__ == "__main__":
