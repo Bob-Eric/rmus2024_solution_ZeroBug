@@ -272,6 +272,7 @@ class align_action:
 
     def init_ctrl(self):
         """init all controllers for align_action afterwards"""
+        self.__aligned = False      ## indicate if angle is aligned
         ## init pid controller (integral, ...)
         self.pid_cfg["xctl"].reset()
         self.pid_cfg["yctl"].reset()
@@ -299,18 +300,22 @@ class align_action:
         send cmd_vel by comparing x_mv and x_sp to align. i.e. the controller
         should be called at certain rate (e.g. 30Hz)
         """
-        ########## for debug ##########
         err = np.array(self.x_mv) - np.array(self.x_sp)
-        print(
-            f"==> ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree"
-        )
-        ###############################
         vel = [0.0, 0.0, 0.0]
-        if self.align_mode == AlignMode.PID:
+        align_mode = self.align_mode
+        if self.align_angle and not self.__aligned:
+            if abs(err[2]) > 0.1:
+                align_mode = AlignMode.StateSpace
+            else:
+                self.__aligned = True
+        ########## for debug ##########
+        print( f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
+        ###############################
+        if align_mode == AlignMode.PID:
             vel = self.__cal_pid_vel(self.x_mv)
-        elif self.align_mode == AlignMode.StateSpace:
+        elif align_mode == AlignMode.StateSpace:
             vel = self.__cal_custom_vel(self.x_mv)
-        elif self.align_mode == AlignMode.OpenLoop:
+        elif align_mode == AlignMode.OpenLoop:
             t = rospy.get_time()
             if self.t1_open == None:
                 x, y = self.x_mv[:2] - self.x_sp[:2]
