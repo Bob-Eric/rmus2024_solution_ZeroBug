@@ -3,10 +3,17 @@
 
 import rospy
 from std_msgs.msg import UInt8MultiArray
-from rmus_solution.srv import switch, setgoal, graspsignal, graspconfig, keepoutmode
+from rmus_solution.srv import (
+    switch,
+    setgoal,
+    graspsignal,
+    graspconfig,
+    keepoutmode,
+    graspsignalResponse,
+)
 from navi_control import PointName, router
 from img_processor import ModeRequese
-from manipulator import AlignRequest
+from manipulator import AlignRequest, ErrorCode
 from rmus_solution.msg import MarkerInfoList, MarkerInfo
 from geometry_msgs.msg import Point, PoseArray
 import math
@@ -23,10 +30,14 @@ class gamecore:
         self.navigation = rospy.ServiceProxy("/navigation/goal", setgoal)
         self.aligner = rospy.ServiceProxy("/manipulator/grasp", graspsignal)
         self.img_switch_mode = rospy.ServiceProxy("/img_processor/mode", switch)
-        self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
+        self.swtch_align_mode = rospy.ServiceProxy(
+            "/manipulator/grasp_config", graspconfig
+        )
         self.keep_out_mode = rospy.ServiceProxy("/keep_out_layer/mode", keepoutmode)
         """ gamecore state params: """
-        self.observing = True  ## if self.observing == True, classify the block to mining areas
+        self.observing = (
+            True  ## if self.observing == True, classify the block to mining areas
+        )
         """ gamecore record data (global): """
         self.gameinfo = None
         self.block_mining_area = {1: -1, 2: -1, 3: -1, 4: -1, 5: -1, 6: -1}
@@ -132,14 +143,16 @@ class gamecore:
         return mining_area_id
 
     def go_get_block(self, block_id: int, retry: int = 0):
-        """ 
+        """
         go to mining_area if target block's not in sight, try grasp the block once.
             Assertion: target block must in sight in current pose, or spot0 or spot1 in mining area.
             return True iff the block's not in sight after grasp action.
         """
         area_idx = self.block_mining_area[block_id]
         if area_idx == -1:
-            rospy.logwarn(f"panic in go_get_block(): block {block_id} is not in the mining area.")
+            rospy.logwarn(
+                f"panic in go_get_block(): block {block_id} is not in the mining area."
+            )
             return False
         navi_areas = [
             PointName.MiningArea_0_Vp_2,
@@ -153,23 +166,26 @@ class gamecore:
         self.img_switch_mode(ModeRequese.BlockInfo)
         if not self.blockinfo_dict[block_id].in_cam:
             print(f"block {block_id} not found in sight, go to spot0...")
-            self.navigation(navi_areas[2*area_idx], "")
+            self.navigation(navi_areas[2 * area_idx], "")
             rospy.sleep(0.5)
         if not self.blockinfo_dict[block_id].in_cam:
             print(f"block {block_id} not found in spot0, go to spot1...")
-            self.navigation(navi_areas[2*area_idx+1], "")
+            self.navigation(navi_areas[2 * area_idx + 1], "")
             rospy.sleep(0.5)
         if not self.blockinfo_dict[block_id].in_cam:
-            rospy.logwarn(f"panic in go_get_block(): block {block_id} is not in sight. cannot find it.")
+            rospy.logwarn(
+                f"panic in go_get_block(): block {block_id} is not in sight. cannot find it."
+            )
             return False
-        self.aligner(AlignRequest.Grasp, block_id, 0)
+        resp:graspsignalResponse = self.aligner(AlignRequest.Grasp, block_id, 0)
         ## because arm pos will be reset when grasp done, target block shouldn't be sight.
-        for i in range(1, retry+1):
-            if self.blockinfo_dict[block_id].in_cam:
-                print(f"----------retry {i}----------")
-                self.aligner(AlignRequest.Grasp, block_id, 0)
-                print(f"----------retry {i} done----------")
-        return not self.blockinfo_dict[block_id].in_cam
+        for i in range(1, retry + 1):
+            if not self.blockinfo_dict[block_id].in_cam and resp.error_code == ErrorCode.Success:
+                return True
+            print(f"----------retry {i}----------")
+            resp = self.aligner(AlignRequest.Grasp, block_id, 0)
+            print(f"----------retry {i} done----------")
+        return not self.blockinfo_dict[block_id].in_cam and resp.error_code == ErrorCode.Success
 
     def stack(self, block_id: int, slot: int, layer: int):
         """stack the block to the given slot and layer"""
@@ -261,7 +277,9 @@ class gamecore:
         ## check stacking
         b1, b2, b3 = self.gameinfo.data
         b4, b5, b6 = blocks_left
-        stack_fin = self.check_stacked_blocks({b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)})
+        stack_fin = self.check_stacked_blocks(
+            {b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)}
+        )
         if stack_fin:
             print("perfect!")
 
