@@ -123,7 +123,9 @@ class manipulator:
         if req.mode == AlignRequest.Reset:
             self.arm_act.reset_pos()
             self.arm_act.open_gripper()
-            return self.grp_sig_resp(True, "reset arm position and open gripper", ErrorCode.Success)
+            return self.grp_sig_resp(
+                True, "reset arm position and open gripper", ErrorCode.Success
+            )
         # if image_time is too old, rejects to grasp or place cube, instead just go back for sometime
         initial_time = rospy.get_time()
         while rospy.get_time() - self.stamp > 0.1:
@@ -216,9 +218,8 @@ class manipulator:
         pos_chassis, ang_chassis = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
         )
-        if abs(ang_chassis) > np.pi / 4:
-            ang_chassis -= np.sign(ang_chassis) * np.pi / 2
-        # print(ang_chassis)
+        # if abs(ang_chassis) > np.pi / 4:
+        #     ang_chassis -= np.sign(ang_chassis) * np.pi / 2
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
 
     def grasp(self, rate):
