@@ -101,7 +101,7 @@ class manipulator:
         self.__dynamic_reconfigure_server = Server(
             manipulator_PIDConfig, self.dynamic_reconfigure_callback
         )
-        self.align_angle = False
+        self.align_angle = True
         self.align_mode = AlignMode.PID
         self.align_act.set_align_config(self.align_angle, self.align_mode)
         ############ Test for rosbag ############
@@ -218,6 +218,9 @@ class manipulator:
         pos_chassis, ang_chassis = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
         )
+        if abs(ang_chassis) > np.pi / 4:
+            ang_chassis -= np.sign(ang_chassis) * np.pi / 2
+        # print(ang_chassis)
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
 
     def grasp(self, rate):
