@@ -107,7 +107,7 @@ class arm_action:
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo("<manipulator>: now prepare to place (first layer)")
         extension = 0.21
-        height = 0.02 + 0.055 * (place_layer - 1)
+        height = 0.005 + 0.055 * (place_layer - 1)
         self.set_arm(extension, height)
 
     def grasp(self, align_act, target_in_arm_base: list):
