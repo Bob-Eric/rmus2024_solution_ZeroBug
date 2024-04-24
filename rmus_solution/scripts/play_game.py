@@ -56,6 +56,7 @@ class gamecore:
         self.keep_out_mode(KeepOutMode.AddAll, 0)
         self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation(PointName.Noticeboard_2, "")
+        self.keep_out_mode(KeepOutMode.RemoveAll, 0)
         rospy.sleep(1)
         ## go get blocks
         self.img_switch_mode(ModeRequese.BlockInfo)
@@ -63,14 +64,13 @@ class gamecore:
         if not self.finished():
             self.observation()
         # self.grasp_and_place()
-        self.keep_out_mode(KeepOutMode.AddAll, 0)
         self.aligner(AlignRequest.Reset, 0, 0)
         self.navigation(PointName.Park, "")
     
     def finished(self):
         return sum([len(stacked) for stacked in self.stackinfo]) == 6
 
-    def blks_in_sight():
+    def blks_in_sight(self):
         return [blk for blk in self.blockinfo_dict if self.blockinfo_dict[blk].in_cam]
 
     def wait_for_services(self):
@@ -130,7 +130,8 @@ class gamecore:
                     if not self.grasp(blk, retry=1):
                         break
                     self.observing = False
-                    ## check area_empty after grasp each block
+                    ## check area_empty after grasp each block in spot
+                    self.navigation(spot, "")
                     if len(self.blks_in_sight()) == 0:
                         self.area_empty[idx_area] = True
                     ## go to slot and stack
@@ -139,6 +140,10 @@ class gamecore:
                     ## update stackinfo
                     ## TODO: add stack-check logic
                     self.stackinfo[slot-7].append(blk)
+                    print('>>>>>>>>>>>>>>>>>>>>')
+                    for i, stacked in enumerate(self.stackinfo):
+                        print(f"slot{i}: {stacked}")
+                    print('<<<<<<<<<<<<<<<<<<<<')
         print("----------done observing----------")
 
     def check_placeable(self):
@@ -155,7 +160,8 @@ class gamecore:
             for i, stacked in enumerate(self.stackinfo):
                 if 1 <= len(stacked) <= 2:
                     ret = (blk, 7 + i, len(stacked) + 1)
-                    return ret
+                    if len(stacked) == 2:
+                        return ret
         return ret
 
     def update_blockinfo(self, blockinfo_list: MarkerInfoList):
