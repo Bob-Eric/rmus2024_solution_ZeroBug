@@ -253,22 +253,22 @@ class gamecore:
         return True
 
     def grasp_and_place(self):
-        print("----------grasping three basic blocks----------")
+        print("----------stacking three basic blocks----------")
         for i, target in enumerate(self.gameinfo.data):
-            print(f"----------grasping No.{i} block(id={target})----------")
+            print(f"----------stacking No.{i} block(id={target})----------")
             done = self.go_get_block(target, retry=1)
             if not done:
                 continue
             self.navigation(PointName.Station_1 + i, "")
             self.stack(target, 7 + i, 1)
-            print(f"----------done grasping No.{i} block(id={target})----------")
-        print("----------done grasping three basic blocks----------")
+            print(f"----------done stacking No.{i} block(id={target})----------")
+        print("----------done stacking three basic blocks----------")
         blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo.data]
         print(f"stacking the rest of the blocks: {blocks_left}")
         slots_order = [7, 7, 8]
         layers_order = [2, 3, 2]
         for i, target in enumerate(blocks_left):
-            print(f"----------grasping No.{i} block(id={target})----------")
+            print(f"----------stacking No.{i} block(id={target})----------")
             done = self.go_get_block(target, retry=1)
             if not done:
                 continue
