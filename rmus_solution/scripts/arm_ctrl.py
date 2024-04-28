@@ -135,7 +135,7 @@ class arm_action:
         rospy.sleep(0.7)
         ## move backwards a little bit
         align_act.send_cmd_vel([-0.3, 0.0, 0.0])
-        rospy.sleep(0.5)
+        rospy.sleep(0.7)
         self.reset_pos()
         align_act.send_cmd_vel([0.0, 0.0, 0.0])
         # rospy.sleep(0.5)
