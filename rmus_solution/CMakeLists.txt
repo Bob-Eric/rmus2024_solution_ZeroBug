@@ -24,6 +24,7 @@ add_service_files(
   graspsignal.srv
   graspconfig.srv
   keepoutmode.srv
+  setgoalcoord.srv
 )
 
 generate_messages(
