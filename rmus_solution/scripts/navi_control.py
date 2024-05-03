@@ -8,6 +8,7 @@ from geometry_msgs.msg import Twist, PoseStamped, PointStamped
 from move_base_msgs.msg import MoveBaseActionResult
 from rmus_solution.srv import setgoal, setgoalResponse, setgoalRequest
 from rmus_solution.srv import keepoutmode, keepoutmodeResponse, keepoutmodeRequest
+from rmus_solution.srv import setgoalcoord, setgoalcoordRequest, setgoalcoordResponse
 from keep_out_layer.srv import keepOutZone, keepOutZoneRequest, keepOutZoneResponse
 import tf2_ros
 from tf_conversions import transformations
@@ -119,6 +120,9 @@ class router:
         self.__xju_service_local = rospy.ServiceProxy(
             "/move_base/local_costmap/keep_out_layer/xju_zone", keepOutZone
         )
+        self.__set_goal_coord_service = rospy.Service(
+            "/navigation/goal/coord", setgoalcoord, self.setgoalcoordCallback
+        )
 
     def getKeepOutAreaPoints(self):
         mining_area_center = [(-0.15, 0.8), (0.7, 3.4), (2.55, -0.1)]
@@ -225,17 +229,15 @@ class router:
         if msg.status.status == 3:
             self.M_reach_goal = True
 
-    def pubMovebaseMissionGoal(self):
+    def pubMovebaseMissionGoal(self, x: float, y: float, yaw: float):
         simple_goal = PoseStamped()
         simple_goal.header.stamp = rospy.Time.now()
 
         simple_goal.header.frame_id = "map"
-        simple_goal.pose.position.x = self.Points[self.mission][0]
-        simple_goal.pose.position.y = self.Points[self.mission][1]
+        simple_goal.pose.position.x = x
+        simple_goal.pose.position.y = y
         simple_goal.pose.position.z = 0.0
-        quat = transformations.quaternion_from_euler(
-            0.0, 0.0, self.Points[self.mission][2]
-        )
+        quat = transformations.quaternion_from_euler(0.0, 0.0, yaw)
         simple_goal.pose.orientation.x = quat[0]
         simple_goal.pose.orientation.y = quat[1]
         simple_goal.pose.orientation.z = quat[2]
@@ -249,7 +251,11 @@ class router:
 
         if 0 <= req.point < PointName.End:
             self.mission = PointName(req.point)
-            self.pubMovebaseMissionGoal()
+            self.pubMovebaseMissionGoal(
+                self.Points[self.mission][0],
+                self.Points[self.mission][1],
+                self.Points[self.mission][2],
+            )
             self.M_reach_goal = False
 
             r = rospy.Rate(10)
@@ -277,6 +283,31 @@ class router:
             rospy.loginfo("Invalid request!")
             resp.res = False
             resp.response = "Invalid request!"
+
+        return resp
+
+    def setgoalcoordCallback(self, req: setgoalcoordRequest):
+        resp = setgoalcoordResponse()
+        rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
+        rospy.loginfo(
+            "navigation to x: {:.4f}, y: {:.4f}, yaw: {:.4f}".format(
+                req.x, req.y, req.yaw
+            )
+        )
+        self.pubMovebaseMissionGoal(req.x, req.y, req.yaw)
+        self.M_reach_goal = False
+
+        r = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            if self.M_reach_goal:
+                rospy.loginfo(
+                    "Reach goal x: {:.4f}, y: {:.4f}, yaw: {:.4f}".format(
+                        req.x, req.y, req.yaw
+                    )
+                )
+                resp.res = True
+                break
+            r.sleep()
 
         return resp
 
