@@ -30,12 +30,9 @@ class KeepOutArea(IntEnum):
 
 class PointName(IntEnum):
     Home = 0
-    MiningArea_0_Vp_1 = 1
-    MiningArea_0_Vp_2 = 2
-    MiningArea_1_Vp_1 = 3
-    MiningArea_1_Vp_2 = 4
-    MiningArea_2_Vp_1 = 5
-    MiningArea_2_Vp_2 = 6
+    MiningArea0 = 1
+    MiningArea1 = 2
+    MiningArea2 = 3
     Station_1 = 7
     Station_2 = 8
     Station_3 = 9
@@ -57,12 +54,15 @@ class router:
 
     Points = {
         PointName.Home: (0.00, 0.00, 0.00),
-        PointName.MiningArea_0_Vp_1: (0.5, 0.5, 3 * pi / 4),
-        PointName.MiningArea_0_Vp_2: (0.5, 1.5, -3 * pi / 4),
-        PointName.MiningArea_1_Vp_1: (0.1, 2.8, pi / 4),
-        PointName.MiningArea_1_Vp_2: (1.3, 3.0, 3 * pi / 4),
-        PointName.MiningArea_2_Vp_1: (2.0, 0.4, -pi / 4),
-        PointName.MiningArea_2_Vp_2: (2, -0.5, pi / 4),
+        # PointName.MiningArea_0_Vp_1: (0.5, 0.5, 3 * pi / 4),
+        # PointName.MiningArea_0_Vp_2: (0.5, 1.5, -3 * pi / 4),
+        # PointName.MiningArea_1_Vp_1: (0.1, 2.8, pi / 4),
+        # PointName.MiningArea_1_Vp_2: (1.3, 3.0, 3 * pi / 4),
+        # PointName.MiningArea_2_Vp_1: (2.0, 0.4, -pi / 4),
+        # PointName.MiningArea_2_Vp_2: (2, -0.5, pi / 4),
+        PointName.MiningArea0: (0.76, 1.00, pi),
+        PointName.MiningArea1: (1.25, 2.80, 3/4*pi),
+        PointName.MiningArea2: (2.10, 0.60, -pi/3),
         PointName.Station_1: (1.18, 1.91, 0.00),
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
