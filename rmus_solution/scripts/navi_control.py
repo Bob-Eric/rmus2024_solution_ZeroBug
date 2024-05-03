@@ -255,6 +255,16 @@ class router:
             r = rospy.Rate(10)
             while not rospy.is_shutdown():
                 if self.M_reach_goal:
+                    if req.point == PointName.Park:
+                        ## send velocity
+                        cmd_vel = Twist()
+                        cmd_vel.linear.x = 0.1
+                        cmd_vel.linear.y = -0.1
+                        self.cmd_vel_puber.publish(cmd_vel)
+                        rospy.sleep(3)
+                        cmd_vel.linear.x = 0.0
+                        cmd_vel.linear.y = 0.0
+                        self.cmd_vel_puber.publish(cmd_vel)
                     rospy.loginfo("Reach Goal {}!".format(self.Points[self.mission][0]))
                     resp.res = True
                     resp.response = "Accomplish!"
