@@ -95,13 +95,8 @@ class Processor:
         rospy.Service("/img_processor/mode", switch, self.modeCallBack)
         self.pub_p = rospy.Publisher("/get_gameinfo", UInt8MultiArray, queue_size=1)
         self.pub_b = rospy.Publisher("/get_blockinfo", MarkerInfoList, queue_size=1)
-        self.pub_gpose_raw = rospy.Publisher("/gpose_raw", PoseArray, queue_size=10)
-        self.pub_gpose_lpf = rospy.Publisher("/gpose_lpf", PoseArray, queue_size=10)
-        self.pub_pose_raw = rospy.Publisher("/pose_raw", PoseArray, queue_size=10)
-        self.pub_pose_lpf = rospy.Publisher("/pose_lpf", PoseArray, queue_size=10)
         self.detected_gameinfo = None
         self.blocks_info = [None] * 9
-        self.blocks_info_lpf = [None] * 9  ## low pass filtered blocks_info
 
     def imageCallback(self, image: Image):
         self.image = self.bridge.imgmsg_to_cv2(image, "bgr8")
@@ -124,32 +119,9 @@ class Processor:
 
         ## send tf for visualization
         for i in range(len(self.blocks_info)):
-            if self.blocks_info[i] is not None and self.blocks_info_lpf[i] is not None:
-                self.send_block_tf(
-                    i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info_lpf[i][1]
-                )
-
-        ## publish gpose for visualization in rviz
-        pose_msg = PoseArray()
-        pose_msg.header.frame_id = coord_glb
-        pose_msg.poses = [
-            blockinfo[1] for blockinfo in self.blocks_info if blockinfo is not None
-        ]
-        self.pub_gpose_raw.publish(pose_msg)
-        pose_msg.poses = [
-            blockinfo[1] for blockinfo in self.blocks_info_lpf if blockinfo is not None
-        ]
-        self.pub_gpose_lpf.publish(pose_msg)
-
-        pose_msg.header.frame_id = coord_cam
-        pose_msg.poses = [
-            blockinfo[0] for blockinfo in self.blocks_info if blockinfo is not None
-        ]
-        self.pub_pose_raw.publish(pose_msg)
-        pose_msg.poses = [
-            blockinfo[0] for blockinfo in self.blocks_info_lpf if blockinfo is not None
-        ]
-        self.pub_pose_lpf.publish(pose_msg)
+            if self.blocks_info[i] is None:
+                continue
+            self.send_block_tf(i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info[i][1])
         return
 
     def depthCallback(self, image):
@@ -208,36 +180,32 @@ class Processor:
         print(f"gameinfo: {gameinfo}")
         return
 
-    def point2array(self, point: Point) -> np.ndarray:
+    def P2A(self, point: Point) -> np.ndarray:
         return np.array([point.x, point.y, point.z])
 
-    def array2point(self, array) -> Point:
+    def A2P(self, array) -> Point:
         point = Point()
         point.x, point.y, point.z = array
         return point
 
-    def quat2array(self, quat: Quaternion) -> np.ndarray:
+    def Q2A(self, quat: Quaternion) -> np.ndarray:
         return np.array([quat.x, quat.y, quat.z, quat.w])
 
-    def array2quat(self, array):
+    def A2Q(self, array):
         quat = Quaternion()
         quat.x, quat.y, quat.z, quat.w = array
         return quat
 
-    def low_pass_filter_for_quat(self, last_quat, new_quat, inertia=0.9):
-        # 创建四元数旋转对象
+    def sLPF(self, last_quat, new_quat, inertia=0.9):
+        """ low pass filter with slerp (e.g. quaternion) """
         Rs = R.from_quat([last_quat, new_quat])
         Ts = [0, 1]
-        # 计算两个四元数之间的slerp插值
         slerp = Slerp(Ts, Rs)
-        # 计算两个四元数之间的slerp插值
         r_slerp = slerp([inertia])
-
-        # 返回插值后的四元数
         return r_slerp.as_quat()[0]
-        ...
 
-    def low_pass_filter(self, last_pos, new_pos, inertia=0.9) -> np.array:
+    def LPF(self, last_pos, new_pos, inertia=0.9) -> np.array:
+        """ low pass filter """
         return inertia * last_pos + (1 - inertia) * new_pos
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
@@ -274,60 +242,45 @@ class Processor:
         for i in range(len(self.blocks_info)):
             id = i + 1
             if id in id_list:
-                ## block `id` is detected in image, pose ==noise=> gpose ==filter=> gpose_lpf
+                ## block `id` is detected in image, pose ==> gpose
                 idx = id_list.index(id)
                 ############ for debug ############
                 if self.blocks_info[i] is not None:
-                    gp1 = self.point2array(self.blocks_info[i][1].position)
-                    gp2 = self.point2array(gpose_list[idx].position)
+                    gp1 = self.P2A(self.blocks_info[i][1].position)
+                    gp2 = self.P2A(gpose_list[idx].position)
                     dist = np.linalg.norm(gp1 - gp2)
                     if np.linalg.norm(gp1 - gp2) > 0.2:
                         rospy.logwarn(
                             f"Block {id} has moved a lot ({dist:.2f}) from {gp1} to {gp2}. Maybe misdetection."
                         )
                 ###################################
-                self.blocks_info[i] = [
-                    pose_list[idx],
-                    gpose_list[idx],
-                    self.this_image_time_ms,
-                    True,
-                ]  ## in_cam is True if id in id_list
-            elif self.blocks_info_lpf[i] is not None:
-                ## update pose with last gpose_lpf (pose_in_cam is out-of-date). gpose_lpf ==> gpose & pose
+                if self.blocks_info[i] is None:
+                    self.blocks_info[i] = [pose_list[idx], gpose_list[idx], self.this_image_time_ms, True]
+                ## low pass filter
+                p1 = self.P2A(self.blocks_info[i][0].position)
+                q1 = self.Q2A(self.blocks_info[i][0].orientation)
+                gp1 = self.P2A(self.blocks_info[i][1].position)
+                gq1 = self.Q2A(self.blocks_info[i][1].orientation)
+                p2 = self.P2A(pose_list[idx].position)
+                q2 = self.Q2A(pose_list[idx].orientation)
+                gp2 = self.P2A(gpose_list[idx].position)
+                gq2 = self.Q2A(gpose_list[idx].orientation)
+                self.blocks_info[i][0].position     = self.A2P(self.LPF(p1, p2, inertia=0.5))
+                self.blocks_info[i][0].orientation  = self.A2Q(self.sLPF(q1, q2, inertia=0))
+                self.blocks_info[i][1].position     = self.A2P(self.LPF(gp1, gp2, inertia=0.9))
+                self.blocks_info[i][1].orientation  = self.A2Q(self.sLPF(gq1, gq2, inertia=0.9))
+                self.blocks_info[i][2]              = self.this_image_time_ms
+                self.blocks_info[i][3]              = True   ## in_cam is True if id in id_list
+            elif self.blocks_info[i] is not None:
+                ## update pose with last gpose (pose_in_cam is out-of-date). gpose => pose
                 ## Assumption: block's not moving
-                gpose = self.blocks_info_lpf[i][1]
+                gpose = self.blocks_info[i][1]
                 gpose_stamp = tf2_geometry_msgs.PoseStamped()
                 gpose_stamp.header.stamp = rospy.Time.now()
                 gpose_stamp.header.frame_id = coord_glb
                 gpose_stamp.pose = gpose
                 pose = tf2_geometry_msgs.do_transform_pose(gpose_stamp, inv_trans).pose
-                block_info_makeup = [pose, gpose, self.this_image_time_ms, False]
-                self.blocks_info[i] = block_info_makeup
-            ## no matter if blocks_info is observed or made up, it contains noise
-            ## therefore, apply low pass filter
-            if self.blocks_info[i] is not None:
-                if self.blocks_info_lpf[i] is None:
-                    self.blocks_info_lpf[i] = self.blocks_info[i]
-                p1 = self.point2array(self.blocks_info_lpf[i][0].position)
-                p2 = self.point2array(self.blocks_info[i][0].position)
-                gp1 = self.point2array(self.blocks_info_lpf[i][1].position)
-                gp2 = self.point2array(self.blocks_info[i][1].position)
-                self.blocks_info_lpf[i][0].position = self.array2point(
-                    self.low_pass_filter(p1, p2)
-                )
-                self.blocks_info_lpf[i][1].position = self.array2point(
-                    self.low_pass_filter(gp1, gp2)
-                )
-                q1 = self.quat2array(self.blocks_info_lpf[i][0].orientation)
-                q2 = self.quat2array(self.blocks_info[i][0].orientation)
-                gq1 = self.quat2array(self.blocks_info_lpf[i][1].orientation)
-                gq2 = self.quat2array(self.blocks_info[i][1].orientation)
-                self.blocks_info_lpf[i][0].orientation = self.array2quat(
-                    self.low_pass_filter_for_quat(q1, q2)
-                )
-                self.blocks_info_lpf[i][1].orientation = self.array2quat(
-                    self.low_pass_filter_for_quat(gq1, gq2)
-                )
+                self.blocks_info[i] = [pose, gpose, self.this_image_time_ms, False]
         ## publish blocks info
         self.publish_blocks_info()
         return
