@@ -33,16 +33,16 @@ class PointName(IntEnum):
     MiningArea0 = 1
     MiningArea1 = 2
     MiningArea2 = 3
-    Station_1 = 7
-    Station_2 = 8
-    Station_3 = 9
-    Noticeboard_1 = 10
-    Noticeboard_2 = 11
-    Park = 12
-    Station_Front = 13
-    Station_Back = 14
+    Station_1 = 4
+    Station_2 = 5
+    Station_3 = 6
+    Noticeboard = 7
+    Park = 8
+    Station_Front = 9
+    Station_Back = 10
+    MiningArea1_Vertical = 11
 
-    End = 15
+    End = 12
 
 
 class router:
@@ -54,22 +54,15 @@ class router:
 
     Points = {
         PointName.Home: (0.00, 0.00, 0.00),
-        # PointName.MiningArea_0_Vp_1: (0.5, 0.5, 3 * pi / 4),
-        # PointName.MiningArea_0_Vp_2: (0.5, 1.5, -3 * pi / 4),
-        # PointName.MiningArea_1_Vp_1: (0.1, 2.8, pi / 4),
-        # PointName.MiningArea_1_Vp_2: (1.3, 3.0, 3 * pi / 4),
-        # PointName.MiningArea_2_Vp_1: (2.0, 0.4, -pi / 4),
-        # PointName.MiningArea_2_Vp_2: (2, -0.5, pi / 4),
-        PointName.MiningArea0: (0.76, 1.00, pi),
-        PointName.MiningArea1: (1.25, 2.80, 3/4*pi),
+        PointName.MiningArea0: (0.90, 0.80, pi),
+        PointName.MiningArea1: (1.25, 2.90, 3/4 * pi),
         PointName.MiningArea2: (2.10, 0.60, -pi/3),
         PointName.Station_1: (1.18, 1.91, 0.00),
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
-        PointName.Noticeboard_1: (0.2, 0.2, pi / 4),
-        PointName.Noticeboard_2: (0, 1.6, 0),
+        PointName.Noticeboard: (0, 1.6, 0),
         PointName.Park: (3.16, -0.795, 0.00),
-        PointName.Station_Front: (1.05, 1.55, pi / 12),
+        PointName.Station_Front: (1.05, 1.55, pi/12),
         PointName.Station_Back: (2.48, 1.80, pi),
     }
 
@@ -246,8 +239,7 @@ class router:
 
     def setgoalCallback(self, req: setgoalRequest):
         resp = setgoalResponse()
-        rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
-        rospy.loginfo("req: call = {} point = {}".format(req.call, req.point))
+        rospy.loginfo("req: point = {}".format(req.point))
 
         if 0 <= req.point < PointName.End:
             self.mission = PointName(req.point)
@@ -288,7 +280,6 @@ class router:
 
     def setgoalcoordCallback(self, req: setgoalcoordRequest):
         resp = setgoalcoordResponse()
-        rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>")
         rospy.loginfo(
             "navigation to x: {:.4f}, y: {:.4f}, yaw: {:.4f}".format(
                 req.x, req.y, req.yaw
@@ -314,6 +305,5 @@ class router:
 
 if __name__ == "__main__":
     rospy.init_node("router", anonymous=True)
-    rospy.loginfo(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
     rter = router()
     rospy.spin()

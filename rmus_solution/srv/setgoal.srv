@@ -1,5 +1,4 @@
 uint8 point
-string call
 ---
 bool res
 string response
