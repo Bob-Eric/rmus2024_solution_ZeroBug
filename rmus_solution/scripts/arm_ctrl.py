@@ -279,7 +279,8 @@ class align_action:
 
     def init_ctrl(self):
         """init all controllers for align_action afterwards"""
-        self.__aligned = False  ## indicate if angle is aligned
+        self.aligned:bool = False  ## indicate if angle is aligned
+        self.align_cnt:int = 0
         ## init pid controller (integral, ...)
         self.pid_cfg["xctl"].reset()
         self.pid_cfg["yctl"].reset()
@@ -310,17 +311,21 @@ class align_action:
         err = np.array(self.x_mv) - np.array(self.x_sp)
         vel = [0.0, 0.0, 0.0]
         align_mode = self.align_mode
-        if self.align_angle and not self.__aligned:
-            if abs(err[2]) > 0.1:
-                align_mode = AlignMode.StateSpace
-            else:
-                self.__aligned = True
-                self.pid_cfg["xctl"].reset()
-                self.pid_cfg["yctl"].reset()
+        ## state machine
+        self.align_cnt += 1 if abs(err[2]) < 0.1 else -1
+        self.align_cnt = np.clip(self.align_cnt, -10, 10)
+        if not self.aligned and self.align_cnt == 10:
+            self.aligned = True
+            self.pid_cfg["xctl"].reset()
+            self.pid_cfg["yctl"].reset()
+            print("angle aligned")
+        if self.aligned and self.align_cnt == -10:
+            self.aligned = False
+            print("PANIC: angle now unaligned after aligned?!")
+        if self.align_mode and not self.aligned:
+            align_mode = AlignMode.StateSpace
         ########## for debug ##########
-        print(
-            f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree"
-        )
+        print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
         ###############################
         if align_mode == AlignMode.PID:
             vel = self.__cal_pid_vel(self.x_mv)

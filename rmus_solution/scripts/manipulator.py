@@ -218,8 +218,8 @@ class manipulator:
         pos_chassis, ang_chassis = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
         )
-        # if abs(ang_chassis) > np.pi / 4:
-        #     ang_chassis -= np.sign(ang_chassis) * np.pi / 2
+        if abs(ang_chassis) > np.pi / 3:
+            ang_chassis -= np.sign(ang_chassis) * np.pi / 2
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
 
     def grasp(self, rate):
@@ -232,12 +232,15 @@ class manipulator:
         ## takes ~3 seconds to brake and open gripper
         self.arm_act.preparation_for_grasp(self.align_act)
         """ align first """
+        print("+++ aligning")
         x_sp = self.x_sp_grasp
         self.align_act.init_ctrl()
         self.align_act.set_state_sp(x_sp)
         t_end = rospy.get_time() + self.timeout
         while not rospy.is_shutdown():
             if rospy.get_time() > t_end:
+                self.align_act.send_cmd_vel([-0.3, 0.0, 0.0])
+                rospy.sleep(0.7)
                 self.align_act.stop()
                 return self.grp_sig_resp(False, "Timeout", ErrorCode.Timeout)
             x_mv = self.x_mv
@@ -245,7 +248,7 @@ class manipulator:
             self.align_act.set_state_mv(x_mv)
             self.align_act.align()
             if self.align_act.finished(self.state_tolerance, 1.0):
-                print("align finished")
+                print("==> align finished")
                 self.align_act.stop()
                 break
             rate.sleep()
@@ -363,7 +366,7 @@ class manipulator:
             ]
         )
         angle = sciR.from_quat(quat).as_euler("YXZ")[0]
-        # limit angle from -pi to pi
+        # limit angle to [-pi, pi]
         angle = np.floor((angle + np.pi) / (2 * np.pi)) * 2 * np.pi - angle
         return pos, angle
 
