@@ -267,8 +267,10 @@ class manipulator:
             return self.grp_sig_resp(
                 False, "Invalid marker id", ErrorCode.InvalidMarkerID
             )
-        ## takes ~3 seconds to brake and elevate gripper
-        self.arm_act.preparation_for_place(self.align_act, place_layer)
+        ## takes half second to brake
+        print("+++ aligning")
+        self.align_act.send_cmd_vel([0.0, 0.0, 0.0])
+        rospy.sleep(0.5)
         """ align first """
         x_sp = self.x_sp_place
         self.align_act.init_ctrl()
@@ -283,12 +285,12 @@ class manipulator:
             self.align_act.set_state_mv(x_mv)
             self.align_act.align()
             if self.align_act.finished(self.state_tolerance, 1.0):
-                print("align finished")
+                print("==> align finished")
                 self.align_act.stop()
                 break
             rate.sleep()
         """ place when aligned """
-        self.arm_act.place(self.align_act)
+        self.arm_act.place(self.align_act, place_layer)
         """ response with success """
         return self.grp_sig_resp(True, "Place block", ErrorCode.Success)
 
