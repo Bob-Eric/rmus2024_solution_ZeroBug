@@ -51,22 +51,20 @@ class gamecore:
         """ start gamecore logic """
         ## initial pose
         self.aligner(AlignRequest.Reset, 0, 0)
-        self.navigation(PointName.Home, "")
+        self.navigation(PointName.Home)
         ## get gameinfo
         self.keep_out_mode(KeepOutMode.AddByArea, 0)    ## turn on keep-out of area0
         self.img_switch_mode(ModeRequese.GameInfo)
-        self.navigation(PointName.Noticeboard, "")
+        self.navigation(PointName.Noticeboard)
         self.keep_out_mode(KeepOutMode.RemoveAll, 0)    ## turn off keep-out of area0
         assert len(self.gameinfo) == 3
         rospy.sleep(0.5)
         ## go get blocks
         self.img_switch_mode(ModeRequese.BlockInfo)
         self.cruise()
+        self.keep_out_mode(KeepOutMode.AddAll, 0)
         self.aligner(AlignRequest.Reset, 0, 0)
-        self.navigation(PointName.Park, "")
-    
-    # def finished(self):
-    #     return sum([len(stacked) for stacked in self.stackinfo]) == 6
+        self.navigation(PointName.Park)
 
     def blks_in_sight(self):
         return [blk for blk in self.blockinfo_dict if self.blockinfo_dict[blk].in_cam]
@@ -101,7 +99,7 @@ class gamecore:
     def nearest_block(self) -> int:
         """ return nearest block id among visible blocks, return 0 if no block in sight """
         dists = []
-        for id, blkinfo in self.blockinfo_dict:
+        for id, blkinfo in self.blockinfo_dict.items():
             if not blkinfo.in_cam:
                 continue
             p:Pose = blkinfo.pose
@@ -116,11 +114,18 @@ class gamecore:
         self.img_switch_mode(ModeRequese.BlockInfo)
         spots = [PointName.MiningArea0, PointName.MiningArea1, PointName.MiningArea2]
         blks_stash = []
+        ## traverse 3 areas to grasp and stack blocks
         for i in range(3):
-            blk_id = -1
-            while blk_id:
-                self.navigation(spots[i], "")
+            cnt_debug = 0
+            while 1:
+                cnt_debug += 1
+                if cnt_debug > 4:
+                    print("PANIC!")
+                    break
+                self.navigation(spots[i])
                 blk_id = self.nearest_block()
+                if not blk_id:
+                    break
                 print(f'----------stacking block {blk_id}----------')
                 if not self.grasp(blk_id, retry=1):
                     ## panic: blk_id is the nearest block in sight, but cannot be grasped?!
@@ -128,19 +133,24 @@ class gamecore:
                     print(f"PANIC: {blk_id} is the nearest block in sight, but cannot be grasped?!")
                     break
                 ## deliver it to exchange spot or stash area
-                if blk_id in self.gameinfo:
-                    ## to exchange spot
-                    idx = self.gameinfo.index(blk_id)
-                    self.navigation(PointName.Station_1 + idx, "")
-                    self.stack(blk_id, 7 + idx, 1)
-                else:
-                    ## to stash, TODO: maybe change to check_placeable?
+                ret = self.check_placeable(blk_id)
+                if not ret:
+                    ## to stash
                     ## stash_dst is (x, y, angle), in meter and rad
                     stash_dst = (0.9, 0.3, 0) if not hasattr(self, "stash_lst") else (0.9, self.stash_lst[1] - 0.25, 0)
                     blks_stash.append(blk_id)
                     self.navigation_coord(*stash_dst)
                     self.aligner(AlignRequest.Drop, 0, 0)
                     self.stash_lst = stash_dst
+                else:
+                    slot, layer = ret
+                    ## to exchange station
+                    self.navigation(PointName.Station_1 + slot - 7)
+                    self.stack(blk_id, slot, layer)
+                    self.stackinfo[slot-7].append(blk_id)
+                    print(">>>>>>>>>>>>>>>>>>>>")
+                    print(self.stackinfo)
+                    print("<<<<<<<<<<<<<<<<<<<<")
         stash_vp = (0.5, 0.05, 0)
         slots_order = [7, 8, 7]
         layers_order = [2, 2, 3]
@@ -148,93 +158,39 @@ class gamecore:
             print(f'----------stacking block {blk_id}----------')
             self.navigation_coord(0.9, 0.3 - 0.25*i, 0)
             self.grasp(blk_id, retry=1)
-            self.navigation(slots_order[i] - 7 + PointName.Station_1)
+            self.navigation(PointName.Station_1 + slots_order[i] - 7)
             self.stack(blk_id, slots_order[i], layers_order[i])
 
-    def check_placeable(self):
+    def check_placeable(self, blk_id: int):
         """ 
-        check if there's a block in sight and can be stacked to exchange station.
-            return (blk, slot, layer) if there's a block can be stacked, else None
+        check if target block is in sight and can be stacked to exchange station.
+            return (slot, layer) if target block can be stacked, else None
         """
         ret = None
-        for blk in self.blks_in_sight():
-            if blk in self.gameinfo:
-                ret = (blk, 7 + self.gameinfo.index(blk), 1)
-                return ret
-            ## else blk is non gameinfo block, check if it's stackable (slot has 1 or 2 block)
-            for i, stacked in enumerate(self.stackinfo):
-                if 1 <= len(stacked) <= 2:
-                    ret = (blk, 7 + i, len(stacked) + 1)
-                    if len(stacked) == 2:
-                        return ret
+        if blk_id in self.gameinfo:
+            ret = (7 + self.gameinfo.index(blk_id), 1)
+            return ret
+        ## else blk is non gameinfo block, check if it's stackable (slot has 1 or 2 block)
+        for i, stacked in enumerate(self.stackinfo):
+            if not 1 <= len(stacked) <= 2:
+                continue
+            ret = (7 + i, len(stacked) + 1)
+            if len(stacked) == 2:
+                break
         return ret
 
     def update_blockinfo(self, blockinfo_list: MarkerInfoList):
         for blockinfo in blockinfo_list.markerInfoList:
             self.blockinfo_dict[blockinfo.id] = blockinfo
-        # if self.observing:
-        #     self.assign_area(blockinfo_list)
         return
 
-    # def assign_area(self, blockinfo_list: MarkerInfoList):
-    #     blockinfo: MarkerInfo
-    #     for blockinfo in blockinfo_list.markerInfoList:
-    #         if 1 <= blockinfo.id <= 6:
-    #             mining_area_id = self.check_near_mining_area(blockinfo.gpose.position)
-    #             self.block_mining_area[blockinfo.id] = mining_area_id
-    #     print(self.block_mining_area)
-
-    def check_near_mining_area(self, pos: Point):
-        dist_mining_area = [100.0] * 3
-        for i in range(3):
-            MiningAreaCtrPos = self.mining_area_coord[i]
-            dist_mining_area[i] = math.sqrt(
-                (MiningAreaCtrPos[0] - pos.x) ** 2 + (MiningAreaCtrPos[1] - pos.y) ** 2
-            )
-        if min(dist_mining_area) < 0.75:
-            mining_area_id = dist_mining_area.index(min(dist_mining_area))
-        else:
-            mining_area_id = 0
-        return mining_area_id
-
-    # def find(self, block_id: int):
-    #     """ find target block in current pose, and if not, it goes to its mining_area to check if it's there
-    #             Assertion: target block must in sight in current pose, or spot0 or spot1 in mining area.
-    #             return True iff target block can be found
-    #     """
-    #     self.img_switch_mode(ModeRequese.BlockInfo)
-    #     ## found in current pose
-    #     if self.blockinfo_dict[block_id].in_cam:
-    #         return True
-    #     ## nowhere to go and check, just return False
-    #     area_idx = self.block_mining_area[block_id]
-    #     if area_idx == -1:
-    #         rospy.logwarn(f"panic in go_get_block(): block {block_id} is not in the mining area.")
-    #         return False
-    #     navi_areas = [
-    #         PointName.MiningArea_0_Vp_2,
-    #         PointName.MiningArea_0_Vp_1,
-    #         PointName.MiningArea_1_Vp_2,
-    #         PointName.MiningArea_1_Vp_1,
-    #         PointName.MiningArea_2_Vp_1,
-    #         PointName.MiningArea_2_Vp_2,
-    #     ]
-    #     print(f"fetching block {block_id} from area No.{area_idx}")
-    #     for i in [0, 1]:
-    #         print(f"block {block_id} not found here, go to spot{i}...")
-    #         self.navigation(navi_areas[2 * area_idx + i], "")
-    #         rospy.sleep(0.5)
-    #         if self.blockinfo_dict[block_id].in_cam:
-    #             return True
-    #     return False
-    
     def grasp(self, block_id: int, retry: int = 0):
         """ grasp target block with retry given times.
                 Assertion: target block's in sight.
                 return True iff the block's not in sight after grasp action.
         """
         resp:graspsignalResponse = self.aligner(AlignRequest.Grasp, block_id, 0)
-        ## because arm pos will be reset when grasp done, target block shouldn't be sight.
+        ## because arm pos will be reset when grasp done, target block shouldn't be in sight.
         for i in range(1, retry + 1):
             if not self.blockinfo_dict[block_id].in_cam and resp.error_code == ErrorCode.Success:
                 return True
@@ -244,8 +200,10 @@ class gamecore:
         return not self.blockinfo_dict[block_id].in_cam and resp.error_code == ErrorCode.Success
 
     def stack(self, block_id: int, slot: int, layer: int):
-        """ stack the block to the given slot and layer """
-        self.navigation(slot, "")
+        """
+        stack the block to the given slot and layer
+        assertion: given slot is in sight
+        """
         self.aligner(AlignRequest.Place, slot, layer)
         return False
 
