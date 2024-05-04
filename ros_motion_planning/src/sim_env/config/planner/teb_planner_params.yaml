@@ -38,7 +38,7 @@ TebLocalPlannerROS:
   global_plan_viapoint_sep: 0.1 # not fine-tuned
   allow_init_with_backwards_motion: True
   max_global_plan_lookahead_dist: 2.0
-  feasibility_check_no_poses: 1
+  feasibility_check_no_poses: 4
   exact_arc_length: False
 
   # Robot
