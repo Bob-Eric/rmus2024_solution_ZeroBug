@@ -111,7 +111,6 @@ class arm_action:
         self.set_arm(extension, height)
 
     def grasp(self, align_act, target_in_arm_base: list):
-        # print(f"-------------------- {target_in_arm_base} --------------------")
         extension = np.clip(target_in_arm_base[0], 0.09, 0.22)
         height = max(target_in_arm_base[2], -0.08)
         self.set_arm(extension, height)
@@ -124,11 +123,12 @@ class arm_action:
         align_act.send_cmd_vel([-0.3, 0.0, 0.0])
         rospy.sleep(0.5)
         align_act.send_cmd_vel([0.0, 0.0, 0.0])
-        # rospy.sleep(0.5)
 
-    def place(self, align_act):
+    def place(self, align_act, place_layer):
+        rospy.loginfo(f"elevate gripper to layer {place_layer}")
+        self.place_pos(place_layer)
+        rospy.sleep(1)
         align_act.send_cmd_vel([0.0, 0.0, 0.0])
-        ## stay still for 1 sec to ensure accuracy, 0.5sec proved to be too short
         rospy.sleep(0.3)
         # print("Place: reach the goal for placing.")
         self.open_gripper()
@@ -153,12 +153,6 @@ class arm_action:
     # TODO: check if aligning with arm reaching out will cause bug 
     def preparation_for_place(self, align_act, place_layer: int):
         """takes ~3 seconds to brake and elevate gripper"""
-        rospy.loginfo("First align then place")
-        align_act.send_cmd_vel([0.0, 0.0, 0.0])
-        # rospy.sleep(0.5)
-        self.place_pos(place_layer)
-        rospy.sleep(0.5)
-        rospy.loginfo(f"elevate gripper to layer {place_layer}")
 
 
 class align_action:
