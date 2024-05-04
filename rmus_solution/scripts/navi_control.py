@@ -25,6 +25,7 @@ class KeepOutArea(IntEnum):
     MiningArea_0 = 0
     MiningArea_1 = 1
     MiningArea_2 = 2
+    TempArea = 3
 
 
 class PointName(IntEnum):
@@ -122,13 +123,14 @@ class router:
 
     def getKeepOutAreaPoints(self):
         mining_area_center = [(-0.15, 0.8), (0.7, 3.4), (2.55, -0.1)]
+        temp_area_center = (1.45, 0.2)
 
-        def getPoints(center: "tuple[float,float]", size: float):
+        def getPoints(center: "tuple[float,float]", size: "tuple[float,float]"):
             points: list[PointStamped] = []
             for i in range(2):
                 for j in range(2):
-                    x = center[0] + size * (i - 0.5)
-                    y = center[1] + size * (j - 0.5)
+                    x = center[0] + size[0] * (i - 0.5)
+                    y = center[1] + size[1] * (j - 0.5)
                     poseStamped = PointStamped()
                     poseStamped.header.frame_id = "map"
                     poseStamped.point.x = x
@@ -141,19 +143,23 @@ class router:
             points[3] = pnt_tmp
             return points
 
-        size = 0.25
-
+        mining_area_size = (0.25, 0.25)
+        temp_area_size = (0.05, 0.5)
         self.KeepOutPoints = {
             KeepOutArea.MiningArea_0: {
-                "pose": getPoints(mining_area_center[0], size),
+                "pose": getPoints(mining_area_center[0], mining_area_size),
                 "id": None,
             },
             KeepOutArea.MiningArea_1: {
-                "pose": getPoints(mining_area_center[1], size),
+                "pose": getPoints(mining_area_center[1], mining_area_size),
                 "id": None,
             },
             KeepOutArea.MiningArea_2: {
-                "pose": getPoints(mining_area_center[2], size),
+                "pose": getPoints(mining_area_center[2], mining_area_size),
+                "id": None,
+            },
+            KeepOutArea.TempArea: {
+                "pose": getPoints(temp_area_center, temp_area_size),
                 "id": None,
             },
         }
@@ -188,9 +194,8 @@ class router:
             resp.success = True
             resp.message = message
             rospy.loginfo(message)
-            self.KeepOutPoints[KeepOutArea.MiningArea_0]["id"] = None
-            self.KeepOutPoints[KeepOutArea.MiningArea_1]["id"] = None
-            self.KeepOutPoints[KeepOutArea.MiningArea_2]["id"] = None
+            for _, temp_area in self.KeepOutPoints.items():
+                temp_area["id"] = None
 
         elif mode == KeepOutMode.AddByArea:
             if self.KeepOutPoints[area]["id"] is None:

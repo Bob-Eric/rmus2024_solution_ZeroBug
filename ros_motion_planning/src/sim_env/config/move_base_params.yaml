@@ -1,12 +1,12 @@
 shutdown_costmaps: false
 
 planner_frequency: 2.0
-planner_patience: 5.0
+planner_patience: 3.0
 
 controller_frequency: 10.0
 controller_patience: 15.0
 
-oscillation_timeout: 10.0
+oscillation_timeout: 5.0
 oscillation_distance: 0.2
 
 conservative_reset_dist: 3.0
@@ -25,6 +25,12 @@ recovery_behaviors: [
     },
   ] #default
 
+conservative_reset:
+  reset_distance: 3.0
+
+rotate_recovery:
+  timeout: 5.0
+
 straf_recovery:
   enabled: true
   frequency: 20.0
@@ -36,3 +42,6 @@ straf_recovery:
   timeout: 10.0
   obstacle_find_interval: 0.5
   xy_goal_tolerance: 0.1
+
+aggressive_reset:
+  reset_distance: 1.0
