@@ -33,18 +33,18 @@ TebLocalPlannerROS:
   teb_autosize: True
   dt_ref: 0.3
   dt_hysteresis: 0.03
-  min_samples: 5 # default
+  min_samples: 3 # default
   global_plan_overwrite_orientation: True
   global_plan_viapoint_sep: 0.1 # not fine-tuned
   allow_init_with_backwards_motion: True
   max_global_plan_lookahead_dist: 2.0
-  feasibility_check_no_poses: 4
+  feasibility_check_no_poses: 1
   exact_arc_length: False
 
   # Robot
   max_vel_x: 0.4
   max_vel_x_backwards: 0.2
-  max_vel_y: 0.4 # for omnidirection
+  max_vel_y: 0.3 # for omnidirection
   max_vel_theta: 0.4
   acc_lim_x: 1.0
   acc_lim_y: 1.0 # for omnidirection

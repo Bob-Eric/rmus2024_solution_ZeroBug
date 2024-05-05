@@ -23,11 +23,8 @@ from navi_control import KeepOutMode, KeepOutArea
 
 
 class gamecore:
-    mining_area_coord = [(0, 1.0), (0.65, 3.3), (2.4, -0.15)]
-
     def __init__(self):
         self.wait_for_services()
-
         rospy.loginfo("Get all rospy sevice!")
         self.navigation = rospy.ServiceProxy("/navigation/goal", setgoal)
         self.navigation_coord = rospy.ServiceProxy("/navigation/goal/coord", setgoalcoord)
@@ -53,10 +50,10 @@ class gamecore:
         self.aligner(AlignRequest.Reset, 0, 0)
         self.navigation(PointName.Home)
         ## get gameinfo
-        self.keep_out_mode(KeepOutMode.AddByArea, 0)    ## turn on keep-out of area0
+        self.keep_out_mode(KeepOutMode.AddAll, 0)
         self.img_switch_mode(ModeRequese.GameInfo)
         self.navigation(PointName.Noticeboard)
-        self.keep_out_mode(KeepOutMode.RemoveAll, 0)    ## turn off keep-out of area0
+        self.keep_out_mode(KeepOutMode.RemoveAll, 0)
         assert len(self.gameinfo) == 3
         rospy.sleep(0.5)
         ## go get blocks
@@ -126,7 +123,7 @@ class gamecore:
                 blk_id = self.nearest_block()
                 if not blk_id:
                     break
-                print(f'----------stacking block {blk_id}----------')
+                print(f'----------grasping and stacking block {blk_id}----------')
                 if not self.grasp(blk_id, retry=1):
                     ## panic: blk_id is the nearest block in sight, but cannot be grasped?!
                     ## break while loop and go to next area
@@ -155,8 +152,8 @@ class gamecore:
         slots_order = [7, 8, 7]
         layers_order = [2, 2, 3]
         for i, blk_id in enumerate(blks_stash):
-            print(f'----------stacking block {blk_id}----------')
-            self.navigation_coord(0.9, 0.3 - 0.25*i, 0)
+            print(f'----------grasping and stacking block {blk_id}----------')
+            self.navigation_coord(0.75, 0.3 - 0.25*i, 0)
             self.grasp(blk_id, retry=1)
             self.navigation(PointName.Station_1 + slots_order[i] - 7)
             self.stack(blk_id, slots_order[i], layers_order[i])
@@ -253,36 +250,6 @@ class gamecore:
                 )
                 return False
         return True
-
-    # def grasp_and_place(self):
-    #     print("----------grasping three basic blocks----------")
-    #     for i, target in enumerate(self.gameinfo):
-    #         print(f"----------grasping No.{i} block(id={target})----------")
-    #         if self.find(target) and self.grasp(target, retry=1):
-    #             self.navigation(PointName.Station_1 + i, "")
-    #             self.stack(target, 7 + i, 1)
-    #             print(f"----------done grasping No.{i} block(id={target})----------")
-    #     print("----------done grasping three basic blocks----------")
-    #     blocks_left = [i for i in range(1, 6 + 1) if i not in self.gameinfo]
-    #     print(f"stacking the rest of the blocks: {blocks_left}")
-    #     slots_order = [7, 7, 8]
-    #     layers_order = [2, 3, 2]
-    #     for i, target in enumerate(blocks_left):
-    #         print(f"----------grasping No.{i} block(id={target})----------")
-    #         if self.find(target) and self.grasp(target, retry=1):
-    #             self.navigation(slots_order[i] - 7 + PointName.Station_1, "")
-    #             self.stack(target, slots_order[i], layers_order[i])
-    #             print(f"----------done stacking No.{i} block(id={target})----------")
-    #     print("----------done stacking three blocks----------")
-    #     ## check stacking
-    #     b1, b2, b3 = self.gameinfo
-    #     b4, b5, b6 = blocks_left
-    #     stack_fin = self.check_stacked_blocks(
-    #         {b1: (7, 1), b2: (8, 1), b3: (9, 1), b4: (7, 2), b5: (7, 3), b6: (8, 2)}
-    #     )
-    #     if stack_fin:
-    #         print("perfect!")
-
 
 if __name__ == "__main__":
     rospy.init_node("gamecore_node")
