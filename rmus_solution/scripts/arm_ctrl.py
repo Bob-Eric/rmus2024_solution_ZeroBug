@@ -127,9 +127,7 @@ class arm_action:
     def place(self, align_act, place_layer):
         rospy.loginfo(f"elevate gripper to layer {place_layer}")
         self.place_pos(place_layer)
-        rospy.sleep(1)
-        align_act.send_cmd_vel([0.0, 0.0, 0.0])
-        rospy.sleep(0.3)
+        rospy.sleep(2)
         # print("Place: reach the goal for placing.")
         self.open_gripper()
         rospy.sleep(0.7)
@@ -325,7 +323,7 @@ class align_action:
         if self.align_mode and not self.aligned:
             align_mode = AlignMode.StateSpace
         ########## for debug ##########
-        # print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
+        print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
         ###############################
         if align_mode == AlignMode.PID:
             vel = self.__cal_pid_vel(self.x_mv)

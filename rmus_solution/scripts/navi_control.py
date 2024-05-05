@@ -55,9 +55,9 @@ class router:
 
     Points = {
         PointName.Home: (0.00, 0.00, 0.00),
-        PointName.MiningArea0: (0.90, 0.80, pi),
+        PointName.MiningArea0: (0.82, 0.80, pi),
         PointName.MiningArea1: (1.25, 2.90, 3/4 * pi),
-        PointName.MiningArea2: (2.10, 0.60, -pi/3),
+        PointName.MiningArea2: (2.10, 0.80, -5*pi/12),
         PointName.Station_1: (1.18, 1.91, 0.00),
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
@@ -120,7 +120,7 @@ class router:
 
     def getKeepOutAreaPoints(self):
         mining_area_center = [(-0.15, 0.8), (0.7, 3.4), (2.55, -0.1)]
-        temp_area_center = (1.45, 0.2)
+        temp_area_center = (1.40, 0.15)
 
         def getPoints(center: "tuple[float,float]", size: "tuple[float,float]"):
             points: list[PointStamped] = []
@@ -140,8 +140,8 @@ class router:
             points[3] = pnt_tmp
             return points
 
-        mining_area_size = (0.25, 0.25)
-        temp_area_size = (0.05, 0.5)
+        mining_area_size = (0.30, 0.30)
+        temp_area_size = (0.10, 0.6)
         self.KeepOutPoints = {
             KeepOutArea.MiningArea_0: {
                 "pose": getPoints(mining_area_center[0], mining_area_size),

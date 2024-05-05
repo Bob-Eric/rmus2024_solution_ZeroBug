@@ -191,24 +191,33 @@ class manipulator:
         )
         return np.array([pos_sp[0], pos_sp[1], ang_sp])
 
+    def anti_wall(self, wdir, ang_chassis):
+        bdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb, pose_src=self.pose_targ) @ np.array([0, 0, 1])
+        up = np.array([0, 0, 1])
+        ang = self.sgn_angle(bdir, wdir, up)
+        ## use 75 deg instead of 90 deg to avoid oscillation around 90 deg
+        if abs(ang) > 5/12*np.pi:
+            sgn = np.sign(ang)
+            print(f"<anti-wall> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ", end="")
+            ang_chassis += sgn * np.pi/2
+            print(f"after: {np.rad2deg(ang_chassis):>6.1f} deg")
+        return ang_chassis
+
     @property
     def x_mv(self):
         """get measured variable of target block (in frame_chassis)"""
         pos_chassis, ang_chassis = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
         )
-        ## e.g. grasp area0 blocks
-        wdir = np.array([-1, 0, 0])
-        bdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb, pose_src=self.pose_targ) @ np.array([0, 0, 1])
-        cdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb) @ np.array([0, 0, 1]) ## car forward
-        up = np.array([0, 0, 1])
-        #######################################
-        ## TODO: visualize wdir, bdir, cdir  ##
-        #######################################
-        ang = self.sgn_angle(bdir, wdir, up)
-        if abs(ang) > np.pi / 2:
-            sgn = np.sign(ang)
-        print(f"bdir and wdir angle: {ang * np.rad2deg} degree")
+        gp = self.gpose_targ.position
+        if gp.x > 2.45 or gp.y > 3.45:
+            print(f"({gp.x:.3f}, {gp.y:.3f})")
+            wdir = np.array([1, 0, 0]) if gp.x > 2.45 else np.array([0, 1, 0])
+            ang_chassis = self.anti_wall(wdir, ang_chassis)
+        elif np.abs(ang_chassis) > np.pi / 4:
+            print(f"<nearest-dir> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ", end="")
+            ang_chassis -= np.sign(ang_chassis) * np.pi / 2
+            print(f"after: {np.rad2deg(ang_chassis):>6.1f} deg")
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
 
     def grasp(self, rate):
