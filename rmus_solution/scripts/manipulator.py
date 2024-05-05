@@ -47,6 +47,7 @@ class ErrorCode(IntEnum):
     Fail = 7
 
 
+frame_glb = "map"
 frame_arm = "arm_base"
 frame_cam = "camera_aligned_depth_to_color_frame_correct"
 frame_chassis = "base_link"
@@ -61,6 +62,7 @@ class manipulator:
         self.stamp = 0  ## time stamp when received id and pose of target block
         self.id_targ = 0  ## target block id
         self.pose_targ = Pose()  ## target block pose
+        self.gpose_targ = Pose()  ## target block gpose
         """ config params """
         self.state_tolerance = [0.015, 0.015, 0.1]
 
@@ -104,9 +106,6 @@ class manipulator:
         self.align_angle = True
         self.align_mode = AlignMode.PID
         self.align_act.set_align_config(self.align_angle, self.align_mode)
-        ############ Test for rosbag ############
-        # rospy.Timer(rospy.Duration(0.05), self.timer_callback)
-        ############ Test for rosbag ############
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
@@ -114,6 +113,7 @@ class manipulator:
             markerInfo: MarkerInfo
             if markerInfo.id == self.id_targ:
                 self.pose_targ = markerInfo.pose
+                self.gpose_targ = markerInfo.gpose
                 self.stamp = rospy.get_time()
 
     def grasp_signal_callback(self, req: graspsignalRequest):
@@ -159,27 +159,6 @@ class manipulator:
         resp.res = "Set align mode to " + str(self.align_mode)
         return resp
 
-    def timer_callback(self, event):
-
-        self.id_targ = 3
-        if (
-            self.pose_targ.orientation.x != 0
-            and self.pose_targ.orientation.y != 0
-            and self.pose_targ.orientation.z != 0
-            and self.pose_targ.orientation.w != 0
-        ):
-            # rospy.loginfo(f"pos_cam: {self.pose_targ.position}")
-
-            pos_arm_link, ang_arm_link = self.transfer_frame(
-                self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
-            )
-            # rospy.loginfo(f"pos_chassis: {pos_arm_link}, ang_chassis: {ang_arm_link}")
-
-            pos_arm_base, ang_arm_base = self.transfer_frame(
-                self.pose_targ, frame_src=frame_cam, frame_dst=frame_arm
-            )
-            print(f"ang_arm_base: {ang_arm_base:.3f}")
-
     @property
     def x_sp_grasp(self):
         """get setpoint of grasp (in frame_chassis)"""
@@ -218,8 +197,18 @@ class manipulator:
         pos_chassis, ang_chassis = self.transfer_frame(
             self.pose_targ, frame_src=frame_cam, frame_dst=frame_chassis
         )
-        if abs(ang_chassis) > np.pi / 3:
-            ang_chassis -= np.sign(ang_chassis) * np.pi / 2
+        ## e.g. grasp area0 blocks
+        wdir = np.array([-1, 0, 0])
+        bdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb, pose_src=self.pose_targ) @ np.array([0, 0, 1])
+        cdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb) @ np.array([0, 0, 1]) ## car forward
+        up = np.array([0, 0, 1])
+        #######################################
+        ## TODO: visualize wdir, bdir, cdir  ##
+        #######################################
+        ang = self.sgn_angle(bdir, wdir, up)
+        if abs(ang) > np.pi / 2:
+            sgn = np.sign(ang)
+        print(f"bdir and wdir angle: {ang * np.rad2deg} degree")
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
 
     def grasp(self, rate):
@@ -345,11 +334,9 @@ class manipulator:
         return config
 
     def transfer_frame(self, pose_src: Pose, frame_src, frame_dst):
-        if not self.tfBuffer.can_transform(frame_dst, frame_src, rospy.Time.now()):
-            rospy.logerr(
-                f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}"
-            )
-            return None, None
+        while not self.tfBuffer.can_transform(frame_dst, frame_src, rospy.Time.now()):
+            rospy.logerr(f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}")
+            rospy.sleep(0.1)
         posestamped_src = tf2_geometry_msgs.PoseStamped()
         posestamped_src.header.stamp = rospy.Time.now()
         posestamped_src.header.frame_id = frame_src
@@ -370,6 +357,25 @@ class manipulator:
         angle = np.floor((angle + np.pi) / (2 * np.pi)) * 2 * np.pi - angle
         return pos, angle
 
+    def rot_mat(self, frame_src, frame_dst, pose_src=None):
+        while not self.tfBuffer.can_transform(frame_dst, frame_src, rospy.Time()):
+            rospy.logerr(f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}")
+            rospy.sleep(0.1)
+        posestamp_src = tf2_geometry_msgs.PoseStamped()
+        posestamp_src.header.stamp = rospy.Time()
+        posestamp_src.header.frame_id = frame_src
+        if pose_src is None:
+            posestamp_src.pose.orientation.w = 1
+        else:
+            posestamp_src.pose = pose_src
+        rot_dst = self.tfBuffer.transform(posestamp_src, frame_dst).pose.orientation
+        return sciR.from_quat([rot_dst.x, rot_dst.y, rot_dst.z, rot_dst.w]).as_matrix()
+
+    def sgn_angle(self, vec_from, vec_to, axis):
+        """calculate the sign of the angle between two vectors, return: signed angle, [-pi, pi]"""
+        ang = np.arccos(np.dot(vec_from, vec_to) / (np.linalg.norm(vec_from) * np.linalg.norm(vec_to)))
+        sgn = np.sign(np.cross(vec_from, vec_to).dot(axis))
+        return ang * sgn
 
 if __name__ == "__main__":
     rospy.init_node("manipulator_node", anonymous=True)

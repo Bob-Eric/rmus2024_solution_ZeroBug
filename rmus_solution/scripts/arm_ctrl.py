@@ -325,7 +325,7 @@ class align_action:
         if self.align_mode and not self.aligned:
             align_mode = AlignMode.StateSpace
         ########## for debug ##########
-        print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
+        # print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
         ###############################
         if align_mode == AlignMode.PID:
             vel = self.__cal_pid_vel(self.x_mv)
