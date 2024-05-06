@@ -57,7 +57,7 @@ class router:
         PointName.Home: (0.00, 0.00, 0.00),
         PointName.MiningArea0: (0.82, 0.80, pi),
         PointName.MiningArea1: (1.25, 2.90, 3/4 * pi),
-        PointName.MiningArea2: (2.10, 0.80, -5*pi/12),
+        PointName.MiningArea2: (2.10, 0.60, -pi/3),
         PointName.Station_1: (1.18, 1.91, 0.00),
         PointName.Station_2: (1.18, 1.80, 0.00),
         PointName.Station_3: (1.18, 1.65, 0.00),
