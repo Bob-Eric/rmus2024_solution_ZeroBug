@@ -63,3 +63,5 @@ __pycache__/
 
 ./ros_motion_planning/src/sim_env/meshes/
 ./ros_motion_planning/src/sim_env/models/
+*.mp4
+*.avi
