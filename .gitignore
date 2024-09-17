@@ -60,3 +60,6 @@ __pycache__/
 *_ym.launch
 *.log
 *_debug.py
+
+./ros_motion_planning/src/sim_env/meshes/
+./ros_motion_planning/src/sim_env/models/
