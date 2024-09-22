@@ -22,7 +22,6 @@ add_service_files(
   setgoal.srv
   switch.srv
   graspsignal.srv
-  graspconfig.srv
   keepoutmode.srv
   setgoalcoord.srv
 )
@@ -34,7 +33,7 @@ generate_messages(
 )
 
 
-generate_dynamic_reconfigure_options(cfg/manipulator_PID.cfg)
+generate_dynamic_reconfigure_options(cfg/manipulator.cfg)
 
 catkin_package(
  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs message_runtime dynamic_reconfigure

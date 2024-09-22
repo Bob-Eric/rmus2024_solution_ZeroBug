@@ -7,15 +7,8 @@ from typing import Union
 import rospy
 import numpy as np
 from geometry_msgs.msg import Point, Pose, Twist
-from simple_pid import PID
 import tf2_ros
 from geometry_msgs.msg import Pose, TransformStamped, Vector3
-
-
-class AlignMode(IntEnum):
-    OpenLoop = 0
-    StateSpace = 1
-    PID = 2
 
 
 class arm_action:
@@ -107,7 +100,7 @@ class arm_action:
     def place_pos(self, place_layer: int = 1):
         rospy.loginfo("<manipulator>: now prepare to place (first layer)")
         extension = 0.21
-        height = 0.005 + 0.055 * (place_layer - 1)
+        height = -0.045 + 0.055 * (place_layer - 1)
         self.set_arm(extension, height)
 
     def grasp(self, align_act, target_in_arm_base: list):
@@ -148,7 +141,7 @@ class arm_action:
         self.open_gripper()
         rospy.sleep(0.5)
 
-    # TODO: check if aligning with arm reaching out will cause bug 
+    # TODO: check if aligning with arm reaching out will cause bug
     def preparation_for_place(self, align_act, place_layer: int):
         """takes ~3 seconds to brake and elevate gripper"""
 
@@ -158,29 +151,17 @@ class align_action:
         """object reference"""
         self.__cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         """ state params """
-        self.align_mode = AlignMode.OpenLoop
         self.__is_near_target_state_old = False
         self.x_sp = None  ## state, set point
         self.x_mv = None  ## state, measured variable
         """ config params """
-        self.pid_cfg: dict[str, Union[float, PID]] = {
-            "Ki": 0.0,
-            "Isep": 0.0,
-            "xctl": PID(),
-            "yctl": PID(),
-        }  ## Isep is integral separation
-        self.open_cfg = {
-            "v1": 0.3,
-            "v2": 0.2,
-            "offset_x": 0.1,
-            "t_swtch": 1,
-        }  ## Make sure that v1 and v2 are within range of max/min_vel of arm_action
-        self.ss_cfg = {"decay": 1, "decay_near": 1.5, "dist_thresh": 0.1}
-        self.align_angle = False
+        self.ss_cfg = {"Kp": 4, "Ki": 2, "dist_thresh": 0.1}
         self.max_vel = 0.3
         self.max_angular_vel = 0.3
         self.min_vel = 0.0
         self.min_angular_vel = 0.0
+        ## need to be initialized before init_ctrl
+        self.dT = None
 
     def send_cmd_vel(self, vel: list):
         vel[0] = np.clip(vel[0], -self.max_vel, self.max_vel)
@@ -208,98 +189,38 @@ class align_action:
         self.min_vel = min_vel
         self.min_angular_vel = min_angular_vel
 
-    def set_pid_param(self, Kp: float, Ki: float, Kd: float, sep_Ki_thres: float):
-        ## alias
-        xctl = self.pid_cfg["xctl"]
-        yctl = self.pid_cfg["yctl"]
-        ## set params
-        xctl.tunings = (Kp, Ki, Kd)
-        yctl.tunings = (Kp, Ki, Kd)
-        xctl.reset()
-        yctl.reset()
-        self.pid_cfg["Isep"] = sep_Ki_thres
-        self.pid_cfg["Ki"] = Ki
-
-    def set_sample_time(self, sample_time: float):
-        self.pid_cfg["xctl"].sample_time = sample_time
-        self.pid_cfg["yctl"].sample_time = sample_time
-
-    def __cal_pid_vel(self, measured_pos: list):
-        if (
-            np.linalg.norm(np.array(measured_pos[0:2]) - np.array(self.x_sp[0:2]))
-            > self.pid_cfg["Isep"]
-        ):
-            self.pid_cfg["xctl"].Ki = 0
-            self.pid_cfg["yctl"].Ki = 0
-        else:
-            self.pid_cfg["xctl"].Ki = self.pid_cfg["Ki"]
-            self.pid_cfg["yctl"].Ki = self.pid_cfg["Ki"]
-
-        vel_x = -self.pid_cfg["xctl"](measured_pos[0])
-        vel_y = -self.pid_cfg["yctl"](measured_pos[1])
-
-        return [vel_x, vel_y, 0.0]
-
-    def set_align_config(self, align_angle: bool, align_mode: AlignMode):
-        self.align_angle = align_angle
-        self.align_mode = align_mode
-
-    def __cal_custom_vel(self, measured_pos: list):
-        x, y = measured_pos[0:2]
-        error = np.array(measured_pos) - np.array(self.x_sp)
-        decay = 0
-        if np.linalg.norm(error[0:2]) > self.ss_cfg["dist_thresh"]:
-            decay = self.ss_cfg["decay"]
-        else:
-            decay = self.ss_cfg["decay_near"]
-
-        vel_ang = decay * error[2] if self.align_angle else 0.0
-        vel_x = decay * error[0] + y * vel_ang
-        vel_y = decay * error[1] - x * vel_ang
-        ## apply velocity limit
-        vel_x = (
-            np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x)
-            if fabs(vel_x) > 0.01
-            else 0
-        )
-        vel_y = (
-            np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y)
-            if fabs(vel_y) > 0.01
-            else 0
-        )
-        vel_ang = (
-            np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel)
-            * np.sign(vel_ang)
-            if fabs(vel_ang) > 0.002
-            else 0
-        )
-        return [vel_x, vel_y, vel_ang]
-
     def init_ctrl(self):
-        """init all controllers for align_action afterwards"""
-        self.aligned:bool = False  ## indicate if angle is aligned
-        self.align_cnt:int = 0
-        ## init pid controller (integral, ...)
-        self.pid_cfg["xctl"].reset()
-        self.pid_cfg["yctl"].reset()
         ## init state space controller (nothing to do here)
-        pass
-        ## init open loop controller ()
-        self.t1_open = None
-        self.t2_open = None
+        self.error_sum = np.zeros(3)
         return
 
     def set_state_sp(self, x_sp):
         """set target state (setpoint) of arm_ctrl"""
         self.x_sp = np.array(x_sp)
-        if self.align_mode == AlignMode.PID:
-            self.pid_cfg["xctl"].setpoint = self.x_sp[0]
-            self.pid_cfg["yctl"].setpoint = self.x_sp[1]
         return
 
     def set_state_mv(self, x_mv):
         """set measure variable of arm_ctrl"""
         self.x_mv = np.array(x_mv)
+
+    def set_sample_time(self, dT:float):
+        self.dT = dT
+
+    def calc_cmd_vel(self, measured_pos: list):
+        x, y = measured_pos[0:2]
+        error = np.array(measured_pos) - np.array(self.x_sp)
+        Kp = self.ss_cfg["Kp"]
+        Ki = self.ss_cfg["Ki"] if np.linalg.norm(error[0:2]) < self.ss_cfg["dist_thresh"] else 0
+        self.error_sum += error * self.dT if np.linalg.norm(error[0:2]) < self.ss_cfg["dist_thresh"] else 0
+        # feedback linearization
+        vel_ang = Kp * error[2] + Ki * self.error_sum[2]
+        vel_x = Kp * error[0] + Ki * self.error_sum[0] + y * vel_ang
+        vel_y = Kp * error[1] + Ki * self.error_sum[1] - x * vel_ang
+        ## apply saturation and deadzone
+        vel_x = np.clip(fabs(vel_x), self.min_vel, self.max_vel) * np.sign(vel_x) if fabs(vel_x) > 0.01 else 0
+        vel_y = np.clip(fabs(vel_y), self.min_vel, self.max_vel) * np.sign(vel_y) if fabs(vel_y) > 0.01 else 0
+        vel_ang = np.clip(fabs(vel_ang), self.min_angular_vel, self.max_angular_vel) * np.sign(vel_ang) if fabs(vel_ang) > 0.002 else 0
+        return [vel_x, vel_y, vel_ang]
 
     def align(self):
         """
@@ -307,84 +228,35 @@ class align_action:
         should be called at certain rate (e.g. 30Hz)
         """
         err = np.array(self.x_mv) - np.array(self.x_sp)
-        vel = [0.0, 0.0, 0.0]
-        align_mode = self.align_mode
-        ## state machine
-        self.align_cnt += 1 if abs(err[2]) < 0.1 else -1
-        self.align_cnt = np.clip(self.align_cnt, -10, 10)
-        if not self.aligned and self.align_cnt == 10:
-            self.aligned = True
-            self.pid_cfg["xctl"].reset()
-            self.pid_cfg["yctl"].reset()
-            print("angle aligned")
-        if self.aligned and self.align_cnt == -10:
-            self.aligned = False
-            print("PANIC: angle now unaligned after aligned?!")
-        if self.align_mode and not self.aligned:
-            align_mode = AlignMode.StateSpace
-        ########## for debug ##########
-        print(f"(AlignMode: {align_mode}) ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
-        ###############################
-        if align_mode == AlignMode.PID:
-            vel = self.__cal_pid_vel(self.x_mv)
-        elif align_mode == AlignMode.StateSpace:
-            vel = self.__cal_custom_vel(self.x_mv)
-        elif align_mode == AlignMode.OpenLoop:
-            t = rospy.get_time()
-            if self.t1_open == None:
-                x, y = self.x_mv[:2] - self.x_sp[:2]
-                x -= self.open_cfg["offset_x"]
-                T1 = np.linalg.norm([x, y]) / self.open_cfg["v1"]
-                self.t1_open = t + T1
-                self.v1_open = [x / T1, y / T1, 0.0]
-                print(f"open loop: PHASE1; vel: ({x/T1:.2f}, {y/T1:.2f})m/s")
-            elif t < self.t1_open:
-                vel = self.v1_open.copy()
-            elif t < self.t1_open + self.open_cfg["t_swtch"]:
-                ## brake to make better observation
-                vel = [0.0, 0.0, 0.0]
-            elif self.t2_open == None:
-                x, y = self.x_mv[:2] - self.x_sp[:2]
-                T2 = np.linalg.norm([x, y]) / self.open_cfg["v2"]
-                self.t2_open = t + T2
-                self.v2_open = [x / T2, y / T2, 0.0]
-                print(f"open loop: PHASE2; vel: ({x/T2:.2f}, {y/T2:.2f})m/s")
-            elif t < self.t2_open:
-                vel = self.v2_open.copy()
+        vel = self.calc_cmd_vel(self.x_mv)
         self.send_cmd_vel(vel)
-
-    def finished(self, tolerance: list, timeout: float):
-        if self.align_mode == AlignMode.OpenLoop:
-            return self.t2_open is not None and rospy.get_time() > self.t2_open
-        else:
-            return self.is_near_target_state_sometime(tolerance, timeout)
+        print(f"(ctrl err: {100*err[0]:.2f}cm, {100*err[1]:.2f}cm, {np.rad2deg(err[2]):.1f}degree")
+        return
 
     def stop(self):
         self.send_cmd_vel([0.0, 0.0, 0.0])
 
-    def is_near_target_state_sometime(self, tolerance: list, timeout: float):
-        satisfy = self.is_near_target_state(tolerance)
+    def finished(self, tolerance: list, timeout: float):
+        """ judge if within tolerance in the last few seconds """
+        satisfy = self.tolerated(tolerance)
         if satisfy and not self.__is_near_target_state_old:
             # check if the robot is near the target state for the first time
             self.__near_target_state_start_time = rospy.get_time()
             ...
 
+        # if satisfy:
+        #     print(f"aligned {satisfy} for {rospy.get_time() - self.__near_target_state_start_time} sec")
         self.__is_near_target_state_old = satisfy
 
-        if satisfy and rospy.get_time() - self.__near_target_state_start_time > timeout:
-            # check if the robot is near the target state for timeout
-            return True
-        else:
-            return False
+        return satisfy and rospy.get_time() - self.__near_target_state_start_time > timeout
 
-    def is_near_target_state(self, tolerance: list):
+    def tolerated(self, tolerance: list):
+        """ judge if the current state is within the tolerance """
         x1, y1, ang1 = self.x_mv
         x2, y2, ang2 = self.x_sp
         x_th, y_th, ang_th = tolerance
         satisfy_xy = abs(x1 - x2) < abs(x_th) and abs(y1 - y2) < abs(y_th)
-        satisfy_ang = True
-        if self.align_mode == AlignMode.StateSpace and self.align_angle:
-            satisfy_ang = abs(ang1 - ang2) < abs(ang_th)
+        satisfy_ang = abs(ang1 - ang2) < abs(ang_th)
         return satisfy_xy and satisfy_ang
 
 

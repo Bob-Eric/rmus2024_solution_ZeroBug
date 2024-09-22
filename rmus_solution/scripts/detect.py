@@ -110,8 +110,9 @@ import torch.nn.functional as F
 
 file_path = os.path.abspath(__file__)
 dir_path = os.path.dirname(file_path)
+model_path = os.path.join(dir_path, "simple_digits_classification/model.pth")
 model = CNN_digits(C_in=3, H_in=50, W_in=50, n_classes=9)
-model.load_state_dict(torch.load(dir_path + "/simple_digits_classification/model.pth"))
+model.load_state_dict(torch.load(model_path))
 model.eval()
 
 def classification_cnn(frame_cv, quads, debug=False):
@@ -300,8 +301,7 @@ def marker_detection(
             bbox = cv2.boundingRect(quads[i])
             x, y, z = tvec_list[i].flatten()
             try:
-                cv2.putText(frame, f"{id2tag[quads_id[i]]}", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                # cv2.putText(frame, f"({x:.3f},{y:.3f},{z:.3f})", bbox[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(frame, f"{id2tag[quads_id[i]]}", (bbox[0]+bbox[2], bbox[1]+bbox[3]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
             except:
                 traceback.print_exc()
         cv2.drawContours(frame, quads, -1, (0, 255, 0), 1)
@@ -317,14 +317,14 @@ def marker_detection(
 
 def test():
     """ read image from rgb.avi and test marker_detection """
-    cap = cv2.VideoCapture("./zerobug-2.avi")
+    cap = cv2.VideoCapture("./zerobug.mp4")
     cnt = 0
     while(cap.isOpened()):
         ret, frame = cap.read()
         cnt += 1
         if not ret:
             break
-        if cnt < 1500:
+        if cnt < 900:
             continue
         camera_matrix = np.array(
            [[607.5924072265625, 0.0, 426.4002685546875],

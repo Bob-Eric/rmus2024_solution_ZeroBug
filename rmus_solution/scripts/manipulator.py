@@ -9,9 +9,6 @@ from rmus_solution.srv import (
     graspsignal,
     graspsignalRequest,
     graspsignalResponse,
-    graspconfig,
-    graspconfigRequest,
-    graspconfigResponse,
 )
 from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
@@ -19,7 +16,7 @@ import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
 from rmus_solution.cfg import manipulator_PIDConfig
 from enum import IntEnum
-from arm_ctrl import arm_action, align_action, AlignMode
+from arm_ctrl import arm_action, align_action
 
 
 class AlignRequest(IntEnum):
@@ -64,7 +61,7 @@ class manipulator:
         self.pose_targ = Pose()  ## target block pose
         self.gpose_targ = Pose()  ## target block gpose
         """ config params """
-        self.state_tolerance = [0.015, 0.015, 0.1]
+        self.state_tolerance = [0.01, 0.01, 0.1]
 
         ############### Dynamic params ###############
         self.ros_rate = 30
@@ -97,15 +94,9 @@ class manipulator:
         self.__grasp_signal_service = rospy.Service(
             "/manipulator/grasp", graspsignal, self.grasp_signal_callback
         )
-        self.__grasp_config_service = rospy.Service(
-            "/manipulator/grasp_config", graspconfig, self.grasp_config_callback
-        )
         self.__dynamic_reconfigure_server = Server(
             manipulator_PIDConfig, self.dynamic_reconfigure_callback
         )
-        self.align_angle = True
-        self.align_mode = AlignMode.PID
-        self.align_act.set_align_config(self.align_angle, self.align_mode)
 
     def marker_pose_callback(self, msg: MarkerInfoList):
         """update self.current_marker_poses of self.desired_cube_id"""
@@ -150,14 +141,6 @@ class manipulator:
         else:
             rospy.logerr("Invalid mode")
             return self.grp_sig_resp(False, "Invalid mode", ErrorCode.Fail)
-
-    def grasp_config_callback(self, req: graspconfigRequest):
-        self.align_angle = req.align_angle
-        self.align_mode = AlignMode(req.align_mode)
-        resp = graspconfigResponse()
-        self.align_act.set_align_config(self.align_angle, self.align_mode)
-        resp.res = "Set align mode to " + str(self.align_mode)
-        return resp
 
     @property
     def x_sp_grasp(self):
@@ -211,7 +194,7 @@ class manipulator:
         )
         gp = self.gpose_targ.position
         if gp.x > 2.45 or gp.y > 3.45:
-            print(f"({gp.x:.3f}, {gp.y:.3f})")
+            # print(f"({gp.x:.3f}, {gp.y:.3f})")
             wdir = np.array([1, 0, 0]) if gp.x > 2.45 else np.array([0, 1, 0])
             ang_chassis = self.anti_wall(wdir, ang_chassis)
         elif np.abs(ang_chassis) > np.pi / 4:
@@ -318,16 +301,12 @@ class manipulator:
         self.pos_sp_grasp[0] = config["desired_cube_x"]
         self.pos_sp_grasp[1] = config["desired_cube_y"]
         self.timeout = config["timeout"]
-        self.Kp = config["Kp"]
-        self.Ki = config["Ki"]
-        self.Kd = config["Kd"]
         self.pos_sp_place[0] = config["desired_tag_x"]
         self.pos_sp_place[1] = config["desired_tag_y"]
         self.max_velocity = config["max_velocity"]
         self.min_velocity = config["min_velocity"]
         self.max_angular_velocity = config["max_angular_velocity"]
         self.min_angular_velocity = config["min_angular_velocity"]
-        self.seperate_I_threshold = config["seperate_I_threshold"]
 
         self.align_act.apply_velocity_limit(
             self.max_velocity,
@@ -335,11 +314,7 @@ class manipulator:
             self.min_velocity,
             self.min_angular_velocity,
         )
-        self.align_act.set_pid_param(
-            self.Kp, self.Ki, self.Kd, self.seperate_I_threshold
-        )
         self.align_act.set_sample_time(1.0 / self.ros_rate)
-
         return config
 
     def transfer_frame(self, pose_src: Pose, frame_src, frame_dst):
@@ -385,7 +360,7 @@ class manipulator:
         ang = np.arccos(np.dot(vec_from, vec_to) / (np.linalg.norm(vec_from) * np.linalg.norm(vec_to)))
         sgn = np.sign(np.cross(vec_from, vec_to).dot(axis))
         return ang * sgn
-
+5
 if __name__ == "__main__":
     rospy.init_node("manipulator_node", anonymous=True)
     rter = manipulator()

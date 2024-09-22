@@ -307,6 +307,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=False)
     rospy.loginfo("Image thread started")
     rospy.spin()

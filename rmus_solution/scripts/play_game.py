@@ -9,7 +9,6 @@ from rmus_solution.srv import (
     setgoal,
     setgoalcoord,
     graspsignal,
-    graspconfig,
     keepoutmode,
     graspsignalResponse,
 )
@@ -30,7 +29,6 @@ class gamecore:
         self.navigation_coord = rospy.ServiceProxy("/navigation/goal/coord", setgoalcoord)
         self.aligner = rospy.ServiceProxy("/manipulator/grasp", graspsignal)
         self.img_switch_mode = rospy.ServiceProxy("/img_processor/mode", switch)
-        self.swtch_align_mode = rospy.ServiceProxy("/manipulator/grasp_config", graspconfig)
         self.keep_out_mode = rospy.ServiceProxy("/keep_out_layer/mode", keepoutmode)
         """ gamecore state params: """
         # self.observing = True  ## if self.observing == True, classify the block to mining areas
@@ -43,8 +41,6 @@ class gamecore:
         ## subscribe to gameinfo and blockinfo
         rospy.Subscriber("/get_gameinfo", UInt8MultiArray, self.update_gameinfo)
         rospy.Subscriber("/get_blockinfo", MarkerInfoList, self.update_blockinfo)
-        ## switch to PID control (with angle alignment)
-        self.swtch_align_mode(2, 1)
         """ start gamecore logic """
         ## initial pose
         self.aligner(AlignRequest.Reset, 0, 0)
