@@ -4,7 +4,7 @@
 
 The algorithms can be divided into four modules, navigation, task planner, visual perception and servo control.
 
-<img src="https://github.com/Bob-Eric/rmus2024_solution_ZeroBug/figure/architecture.png" alt="architecture" style="zoom:50%;" />
+<img src="./figure/architecture.png" alt="architecture" style="zoom:50%;" />
 
 The navigation module comprises `navi_control.py`, which is a ROS node and calls `cartographer` to navigate.
 
