@@ -26,8 +26,10 @@ coord_glb = "map"
 
 class ModeRequese(IntEnum):
     DoNothing = 0  ## disable marker_detection to save resources (160% cpu -> 60% cpu)
-    BlockInfo = 1  ## actually not in use, blockinfo and gameinfo are detected simultaneously
-    
+    BlockInfo = (
+        1  ## actually not in use, blockinfo and gameinfo are detected simultaneously
+    )
+
     GameInfo = 2
 
     End = 3
@@ -71,7 +73,9 @@ class Processor:
 
         while not rospy.is_shutdown():
             try:
-                camerainfo = rospy.wait_for_message("/camera/color/camera_info", CameraInfo, timeout=5.0)
+                camerainfo = rospy.wait_for_message(
+                    "/camera/color/camera_info", CameraInfo, timeout=5.0
+                )
                 rospy.loginfo("Get topic /camera/color/camera_info.")
                 self.camera_matrix = np.array(camerainfo.K, "double").reshape((3, 3))
                 rospy.loginfo("camera_matrix :\n {}".format(self.camera_matrix))
@@ -121,7 +125,9 @@ class Processor:
         for i in range(len(self.blocks_info)):
             if self.blocks_info[i] is None:
                 continue
-            self.send_block_tf(i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info[i][1])
+            self.send_block_tf(
+                i + 1, pose=self.blocks_info[i][0], gpose=self.blocks_info[i][1]
+            )
         return
 
     def depthCallback(self, image):
@@ -197,7 +203,7 @@ class Processor:
         return quat
 
     def sLPF(self, last_quat, new_quat, inertia=0.9):
-        """ low pass filter with slerp (e.g. quaternion) """
+        """low pass filter with slerp (e.g. quaternion)"""
         Rs = R.from_quat([new_quat, last_quat])
         Ts = [0, 1]
         slerp = Slerp(Ts, Rs)
@@ -205,7 +211,7 @@ class Processor:
         return r_slerp.as_quat()[0]
 
     def LPF(self, last_pos, new_pos, inertia=0.9) -> np.array:
-        """ low pass filter """
+        """low pass filter"""
         return inertia * last_pos + (1 - inertia) * new_pos
 
     def update_blocks_info(self, id_list, tvec_list, rvec_list):
@@ -220,8 +226,12 @@ class Processor:
         pose_list = [pose_aruco_2_ros(r, t) for t, r in zip(tvec_list, rvec_list)]
         gpose_list = []
         try:
-            trans = self.tfBuffer.lookup_transform(coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2))
-            inv_trans = self.tfBuffer.lookup_transform(coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2))
+            trans = self.tfBuffer.lookup_transform(
+                coord_glb, coord_cam, rospy.Time(), rospy.Duration(0.2)
+            )
+            inv_trans = self.tfBuffer.lookup_transform(
+                coord_cam, coord_glb, rospy.Time(), rospy.Duration(0.2)
+            )
         except Exception as e:
             print(f"Failed to get transform: {e}")
             return
@@ -251,7 +261,12 @@ class Processor:
                         )
                 ###################################
                 if self.blocks_info[i] is None:
-                    self.blocks_info[i] = [pose_list[idx], gpose_list[idx], self.this_image_time_ms, True]
+                    self.blocks_info[i] = [
+                        pose_list[idx],
+                        gpose_list[idx],
+                        self.this_image_time_ms,
+                        True,
+                    ]
                 ## low pass filter
                 p2 = self.P2A(pose_list[idx].position)
                 q2 = self.Q2A(pose_list[idx].orientation)
@@ -261,12 +276,18 @@ class Processor:
                 q1 = self.Q2A(self.blocks_info[i][0].orientation)
                 gp1 = self.P2A(self.blocks_info[i][1].position)
                 gq1 = self.Q2A(self.blocks_info[i][1].orientation)
-                self.blocks_info[i][0].position     = self.A2P(self.LPF(p1, p2, inertia=0))
-                self.blocks_info[i][0].orientation  = self.A2Q(self.sLPF(q1, q2, inertia=0))
-                self.blocks_info[i][1].position     = self.A2P(self.LPF(gp1, gp2, inertia=0.9))
-                self.blocks_info[i][1].orientation  = self.A2Q(self.sLPF(gq1, gq2, inertia=0))
-                self.blocks_info[i][2]              = self.this_image_time_ms
-                self.blocks_info[i][3]              = True   ## in_cam is True if id in id_list
+                self.blocks_info[i][0].position = self.A2P(self.LPF(p1, p2, inertia=0))
+                self.blocks_info[i][0].orientation = self.A2Q(
+                    self.sLPF(q1, q2, inertia=0)
+                )
+                self.blocks_info[i][1].position = self.A2P(
+                    self.LPF(gp1, gp2, inertia=0.9)
+                )
+                self.blocks_info[i][1].orientation = self.A2Q(
+                    self.sLPF(gq1, gq2, inertia=0)
+                )
+                self.blocks_info[i][2] = self.this_image_time_ms
+                self.blocks_info[i][3] = True  ## in_cam is True if id in id_list
             elif self.blocks_info[i] is not None:
                 ## update pose with last gpose (pose_in_cam is out-of-date). gpose => pose
                 ## Assumption: block's not moving
@@ -307,6 +328,6 @@ class Processor:
 
 if __name__ == "__main__":
     rospy.init_node("image_node", anonymous=True)
-    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=False)
+    rter = Processor(initial_mode=ModeRequese.GameInfo, verbose=True)
     rospy.loginfo("Image thread started")
     rospy.spin()

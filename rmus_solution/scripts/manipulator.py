@@ -14,7 +14,7 @@ from rmus_solution.msg import MarkerInfo, MarkerInfoList
 import tf2_ros
 import tf2_geometry_msgs
 from dynamic_reconfigure.server import Server
-from rmus_solution.cfg import manipulator_PIDConfig
+from rmus_solution.cfg import manipulatorConfig
 from enum import IntEnum
 from arm_ctrl import arm_action, align_action
 
@@ -95,7 +95,7 @@ class manipulator:
             "/manipulator/grasp", graspsignal, self.grasp_signal_callback
         )
         self.__dynamic_reconfigure_server = Server(
-            manipulator_PIDConfig, self.dynamic_reconfigure_callback
+            manipulatorConfig, self.dynamic_reconfigure_callback
         )
 
     def marker_pose_callback(self, msg: MarkerInfoList):
@@ -175,14 +175,19 @@ class manipulator:
         return np.array([pos_sp[0], pos_sp[1], ang_sp])
 
     def anti_wall(self, wdir, ang_chassis):
-        bdir = self.rot_mat(frame_src=frame_cam, frame_dst=frame_glb, pose_src=self.pose_targ) @ np.array([0, 0, 1])
+        bdir = self.rot_mat(
+            frame_src=frame_cam, frame_dst=frame_glb, pose_src=self.pose_targ
+        ) @ np.array([0, 0, 1])
         up = np.array([0, 0, 1])
         ang = self.sgn_angle(bdir, wdir, up)
         ## use 75 deg instead of 90 deg to avoid oscillation around 90 deg
-        if abs(ang) > 5/12*np.pi:
+        if abs(ang) > 5 / 12 * np.pi:
             sgn = np.sign(ang)
-            print(f"<anti-wall> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ", end="")
-            ang_chassis += sgn * np.pi/2
+            print(
+                f"<anti-wall> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ",
+                end="",
+            )
+            ang_chassis += sgn * np.pi / 2
             print(f"after: {np.rad2deg(ang_chassis):>6.1f} deg")
         return ang_chassis
 
@@ -198,7 +203,10 @@ class manipulator:
             wdir = np.array([1, 0, 0]) if gp.x > 2.45 else np.array([0, 1, 0])
             ang_chassis = self.anti_wall(wdir, ang_chassis)
         elif np.abs(ang_chassis) > np.pi / 4:
-            print(f"<nearest-dir> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ", end="")
+            print(
+                f"<nearest-dir> ang_chassis before: {np.rad2deg(ang_chassis):>6.1f} deg; ",
+                end="",
+            )
             ang_chassis -= np.sign(ang_chassis) * np.pi / 2
             print(f"after: {np.rad2deg(ang_chassis):>6.1f} deg")
         return np.array([pos_chassis[0], pos_chassis[1], ang_chassis])
@@ -319,7 +327,9 @@ class manipulator:
 
     def transfer_frame(self, pose_src: Pose, frame_src, frame_dst):
         while not self.tfBuffer.can_transform(frame_dst, frame_src, rospy.Time.now()):
-            rospy.logerr(f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}")
+            rospy.logerr(
+                f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}"
+            )
             rospy.sleep(0.1)
         posestamped_src = tf2_geometry_msgs.PoseStamped()
         posestamped_src.header.stamp = rospy.Time.now()
@@ -343,7 +353,9 @@ class manipulator:
 
     def rot_mat(self, frame_src, frame_dst, pose_src=None):
         while not self.tfBuffer.can_transform(frame_dst, frame_src, rospy.Time()):
-            rospy.logerr(f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}")
+            rospy.logerr(
+                f"pick_and_place: cannot find transform between {frame_dst} and {frame_src}"
+            )
             rospy.sleep(0.1)
         posestamp_src = tf2_geometry_msgs.PoseStamped()
         posestamp_src.header.stamp = rospy.Time()
@@ -357,9 +369,14 @@ class manipulator:
 
     def sgn_angle(self, vec_from, vec_to, axis):
         """calculate the sign of the angle between two vectors, return: signed angle, [-pi, pi]"""
-        ang = np.arccos(np.dot(vec_from, vec_to) / (np.linalg.norm(vec_from) * np.linalg.norm(vec_to)))
+        ang = np.arccos(
+            np.dot(vec_from, vec_to)
+            / (np.linalg.norm(vec_from) * np.linalg.norm(vec_to))
+        )
         sgn = np.sign(np.cross(vec_from, vec_to).dot(axis))
         return ang * sgn
+
+
 5
 if __name__ == "__main__":
     rospy.init_node("manipulator_node", anonymous=True)

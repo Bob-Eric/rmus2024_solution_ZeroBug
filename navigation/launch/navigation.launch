@@ -6,7 +6,7 @@
   <arg name="map_file" default="$(find navigation)/maps/map.yaml" />
 
   <!-- rviz -->
-  <node if="$(arg open_rviz)" pkg="rviz" type="rviz" name="rviz" required="true"
+  <node if="$(arg open_rviz)" pkg="rviz" type="rviz" name="rviz" required="false"
     args="-d $(find navigation)/rviz/navigation.rviz" />
 
 
