@@ -4,11 +4,11 @@
 
 This is the official repository of Team ZeroBug, which took first place in 2024 RoboMaster University Sim2real Challenge (RMUS).
 
-<img src="./figure/first_place_ZeroBug.png" alt="certificate" style="zoom:10%;">
+<img src="./figure/certificate.png" alt="certificate" style="zoom:10%;">
 
 RMUS is the mineral searching task of [Robotic Sim2real Challenge](http://www.sim2real.net), hosted at ICRA 2024.
 
-> The RoboMaster University Sim2Real Challenge (“RMUS”) at its core allows participants to win points by rearranging minerals using fully automated RoboMaster EPs that have been modified officially. The match lasts for five minutes with a sim2real-based format, where robots rearrange minerals based on the information shown on the exchange tags to earn points. The objective of the challenge is to assess how well a program completed on a simulation platform can be operated in real application environments. Participants will be ranked according to their total points won.
+> The RoboMaster University Sim2Real Challenge (RMUS) at its core allows participants to win points by rearranging minerals using fully automated RoboMaster EPs that have been modified officially. The match lasts for five minutes with a sim2real-based format, where robots rearrange minerals based on the information shown on the exchange tags to earn points. The objective of the challenge is to assess how well a program completed on a simulation platform can be operated in real application environments. Participants will be ranked according to their total points won.
 
 Basically, RMUS can be divided into two stages, i.e., simulation and real-world. In simulation stage, a standardized simulator developed on Habitat is provided. Afterwards, each team is required to perform sim-to-real transfer by submitting algorithms to the competition committee via Docker once per week and debugging with test-run logs and videos. After 8 rounds of debugging, the committee conducts three trials in the real robot to evaluate the algorithm of each team and ranks teams according to highest score.
 
