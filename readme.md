@@ -110,6 +110,7 @@ docker run -it --name client --network host \
 	-e QT_X11_NO_MITSHM=1 \
 	-e NO_AT_BRIDGE=1 \
 	-e LIBGL_ALWAYS_SOFTWARE=1 \
+    --gpus 'all,"capabilities=compute,video,graphics,utility"' \
 	-v /tmp/.X11-unix:/tmp/.X11-unix \
 	registry.cn-hangzhou.aliyuncs.com/rmus2024/client:latest
 ```
